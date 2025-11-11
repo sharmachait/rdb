@@ -1,10 +1,11 @@
 use std::ffi::CString;
 use std::process;
 use nix::errno::Errno;
+use nix::fcntl::{fcntl, FcntlArg, FdFlag};
 use nix::sys::ptrace;
 use nix::sys::signal::{kill, Signal};
 use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{execvp, fork, ForkResult, Pid};
+use nix::unistd::{close, execvp, fork, pipe, read, write, ForkResult, Pid};
 
 
 pub struct Process {
@@ -77,30 +78,61 @@ impl Process {
         Ok(process)
     }
     pub fn launch(program_path: &str) -> Result<Process, String>{
+        let (read_fd, write_fd) = pipe().map_err(|e|format!("pipe failed: {}", e))?;
+
+        fcntl(&read_fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).ok();
+
+        fcntl(&write_fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).ok();
+
         unsafe {
             let fork_res = fork();
             match fork_res {
                 Ok(ForkResult::Parent {child}) => {
-                    let pid = child.as_raw();
+                    close(write_fd).ok(); //  we only want to read from the parent
 
+                    let mut buffer:[u8;256] = [0;256];
+
+                    let bytes_read = read(&read_fd, &mut buffer).unwrap_or(0);
+
+                    close(read_fd).ok();
+
+                    let pid = child.as_raw();
                     let process_state = ProcessState::Running;
                     let terminate_on_end = true;
                     let process = Process::new(Pid::from_raw(pid), terminate_on_end, process_state);
 
+                    if bytes_read > 0 {
+                        drop(process);
+                        let msg = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+                        return Err(format!("Child process failed with error: {}", msg));
+                    }
+
                     Ok(process)
                 }
                 Ok(ForkResult::Child) => {
+                    close(read_fd).ok(); // we only want to write from the child
+
                     let traceme_res = ptrace::traceme();
                     if let Err(e) = traceme_res {
+
+                        let _ = write(&write_fd, format!("Tracing child process failed: {}", e).as_bytes());
                         eprintln!("Tracing child process failed: {}", e);
+                        close(write_fd).ok();
                         process::exit(1);
                     }
+
                     let program_path_c = CString::new(program_path)
                         .expect("Cstring conversion failed");
                     let exec_args = vec![program_path_c.clone()];
                     let exec_res = execvp(&program_path_c, &exec_args);
+
+                    // if the exec in the above line works fine then we never write something to the pipe
+                    // nor do we ever close it
+
                     if let Err(e) = exec_res {
+                        let _ = write(&write_fd, format!("Tracing child process failed: {}", e).as_bytes());
                         eprintln!("Exec failed: {}", e);
+                        close(write_fd).ok();
                         process::exit(1);
                     }
                     unreachable!();
