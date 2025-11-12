@@ -47,7 +47,7 @@ impl Drop for Process{
 }
 
 impl Process {
-    fn new(pid: Pid, terminate_on_end: bool, process_state: ProcessState) -> Self{
+    pub fn new(pid: Pid, terminate_on_end: bool, process_state: ProcessState) -> Self{
         Self {
             pid,
             terminate_on_end,
