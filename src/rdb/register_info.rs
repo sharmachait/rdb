@@ -29,103 +29,193 @@ pub enum RegisterId { // 125 registers in total
 }
 
 #[repr(C)]
-struct User {
+pub struct User {
     /// General purpose registers (GPRs)
-    regs: UserRegsStruct,
+    pub regs: UserRegsStruct,
     /// Validity flag for FPU state (1 if FPU state is valid)
-    u_fpvalid: i32,
+    pub u_fpvalid: i32,
     /// Padding for 8-byte alignment
-    _pad0: [u8; 4],
+    pub _pad0: [u8; 4],
     /// Floating point unit state (FPU, MMX, SSE registers)
-    i387: UserFpRegsStruct,
+    pub i387: UserFpRegsStruct,
     /// Text segment size in pages
-    u_tsize: u64,
+    pub u_tsize: u64,
     /// Data segment size in pages
-    u_dsize: u64,
+    pub u_dsize: u64,
     /// Stack segment size in pages
-    u_ssize: u64,
+    pub u_ssize: u64,
     /// Starting virtual address of text segment
-    start_code: u64,
+    pub start_code: u64,
     /// Starting virtual address of stack
-    start_stack: u64,
+    pub start_stack: u64,
     /// Signal that caused core dump (or 0)
-    signal: i64,
+    pub signal: i64,
     /// Reserved/padding
-    _pad1: [u8; 8],
+    pub _pad1: [u8; 8],
     /// Pointer to register state (used by gdb)
-    u_ar0: *mut UserRegsStruct,
+    pub u_ar0: *mut UserRegsStruct,
     /// Pointer to FPU state
-    u_fpstate: *mut UserFpRegsStruct,
+    pub u_fpstate: *mut UserFpRegsStruct,
     /// Magic number identifying core file format
-    magic: u64,
+    pub magic: u64,
     /// Command name (process name, null-terminated)
-    u_comm: [u8; 32],
+    pub u_comm: [u8; 32],
     /// Hardware debug registers (dr0-dr7)
-    u_debugreg: [u64; 8],
+    pub u_debugreg: [u64; 8],
     /// CPU exception error code
-    error_code: u64,
+    pub error_code: u64,
     /// Fault address that caused exception
-    fault_address: u64,
+    pub fault_address: u64,
+}
+
+impl User {
+    pub unsafe fn default_user() -> Self {
+        {
+            std::mem::zeroed()
+        }
+    }
+    pub fn print_user(&self){
+        println!("========== General Purpose Registers ==========");
+        println!("rax:      0x{:016x}  ({:20})", self.regs.rax, self.regs.rax);
+        println!("rbx:      0x{:016x}  ({:20})", self.regs.rbx, self.regs.rbx);
+        println!("rcx:      0x{:016x}  ({:20})", self.regs.rcx, self.regs.rcx);
+        println!("rdx:      0x{:016x}  ({:20})", self.regs.rdx, self.regs.rdx);
+        println!("rsi:      0x{:016x}  ({:20})", self.regs.rsi, self.regs.rsi);
+        println!("rdi:      0x{:016x}  ({:20})", self.regs.rdi, self.regs.rdi);
+        println!("rbp:      0x{:016x}  ({:20})", self.regs.rbp, self.regs.rbp);
+        println!("rsp:      0x{:016x}  ({:20})", self.regs.rsp, self.regs.rsp);
+        println!("r8:       0x{:016x}  ({:20})", self.regs.r8, self.regs.r8);
+        println!("r9:       0x{:016x}  ({:20})", self.regs.r9, self.regs.r9);
+        println!("r10:      0x{:016x}  ({:20})", self.regs.r10, self.regs.r10);
+        println!("r11:      0x{:016x}  ({:20})", self.regs.r11, self.regs.r11);
+        println!("r12:      0x{:016x}  ({:20})", self.regs.r12, self.regs.r12);
+        println!("r13:      0x{:016x}  ({:20})", self.regs.r13, self.regs.r13);
+        println!("r14:      0x{:016x}  ({:20})", self.regs.r14, self.regs.r14);
+        println!("r15:      0x{:016x}  ({:20})", self.regs.r15, self.regs.r15);
+        println!("rip:      0x{:016x}  ({:20})", self.regs.rip, self.regs.rip);
+        println!("eflags:   0x{:016x}  ({:20})", self.regs.eflags, self.regs.eflags);
+        println!("orig_rax: 0x{:016x}  ({:20})", self.regs.orig_rax, self.regs.orig_rax);
+
+        println!("\n========== Segment Registers ==========");
+        println!("cs:       0x{:016x}", self.regs.cs);
+        println!("ss:       0x{:016x}", self.regs.ss);
+        println!("ds:       0x{:016x}", self.regs.ds);
+        println!("es:       0x{:016x}", self.regs.es);
+        println!("fs:       0x{:016x}", self.regs.fs);
+        println!("gs:       0x{:016x}", self.regs.gs);
+        println!("fs_base:  0x{:016x}", self.regs.fs_base);
+        println!("gs_base:  0x{:016x}", self.regs.gs_base);
+
+        println!("\n========== FPU Control Registers ==========");
+        println!("fcw:      0x{:04x}", self.i387.cwd);
+        println!("fsw:      0x{:04x}", self.i387.swd);
+        println!("ftw:      0x{:04x}", self.i387.ftw);
+        println!("fop:      0x{:04x}", self.i387.fop);
+        println!("frip:     0x{:016x}", self.i387.rip);
+        println!("frdp:     0x{:016x}", self.i387.rdp);
+        println!("mxcsr:    0x{:08x}", self.i387.mxcsr);
+        println!("mxcsr_mask: 0x{:08x}", self.i387.mxcr_mask);
+
+        println!("\n========== FPU/MMX Registers (ST0-ST7) ==========");
+        for i in 0..8 {
+            print!("st{}: ", i);
+            for j in 0..4 {
+                print!("{:08x} ", self.i387.st_space[i * 4 + j]);
+            }
+            println!();
+        }
+
+        println!("\n========== XMM Registers ==========");
+        for i in 0..16 {
+            print!("xmm{:2}: ", i);
+            for j in 0..4 {
+                print!("{:08x} ", self.i387.xmm_space[i * 4 + j]);
+            }
+            println!();
+        }
+
+        println!("\n========== Debug Registers ==========");
+        for i in 0..8 {
+            println!("dr{}: 0x{:016x}", i, self.u_debugreg[i]);
+        }
+
+        println!("\n========== Process Information ==========");
+        println!("u_fpvalid:    {}", self.u_fpvalid);
+        println!("u_tsize:      {} pages", self.u_tsize);
+        println!("u_dsize:      {} pages", self.u_dsize);
+        println!("u_ssize:      {} pages", self.u_ssize);
+        println!("start_code:   0x{:016x}", self.start_code);
+        println!("start_stack:  0x{:016x}", self.start_stack);
+        println!("signal:       {}", self.signal);
+        println!("magic:        0x{:016x}", self.magic);
+
+        let comm_str = std::str::from_utf8(&self.u_comm)
+            .unwrap_or("<invalid utf8>")
+            .trim_end_matches('\0');
+        println!("u_comm:       {}", comm_str);
+        println!("error_code:   {}", self.error_code);
+        println!("fault_address: 0x{:016x}", self.fault_address);
+    }
 }
 
 #[repr(C)]
-struct UserRegsStruct {
-    r15: u64,
-    r14: u64,
-    r13: u64,
-    r12: u64,
-    rbp: u64,
-    rbx: u64,
-    r11: u64,
-    r10: u64,
-    r9: u64,
-    r8: u64,
-    rax: u64,
-    rcx: u64,
-    rdx: u64,
-    rsi: u64,
-    rdi: u64,
+pub struct UserRegsStruct {
+    pub r15: u64,
+    pub r14: u64,
+    pub r13: u64,
+    pub r12: u64,
+    pub rbp: u64,
+    pub rbx: u64,
+    pub r11: u64,
+    pub r10: u64,
+    pub r9: u64,
+    pub r8: u64,
+    pub rax: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub rsi: u64,
+    pub rdi: u64,
     /// Original value of rax before system call (used by ptrace for syscall tracking)
-    orig_rax: u64,
+    pub orig_rax: u64,
     /// Instruction pointer
-    rip: u64,
+    pub rip: u64,
     /// Code segment selector
-    cs: u64,
+    pub cs: u64,
     /// Flags register
-    eflags: u64,
+    pub eflags: u64,
     /// Stack pointer
-    rsp: u64,
+    pub rsp: u64,
     /// Stack segment selector
-    ss: u64,
-    fs_base: u64,
-    gs_base: u64,
-    ds: u64,
-    es: u64,
-    fs: u64,
-    gs: u64,
+    pub ss: u64,
+    pub fs_base: u64,
+    pub gs_base: u64,
+    pub ds: u64,
+    pub es: u64,
+    pub fs: u64,
+    pub gs: u64,
 }
 
 #[repr(C)]
-struct UserFpRegsStruct {
-    cwd: u16,           // Control word
-    swd: u16,           // Status word
-    ftw: u16,           // Tag word
-    fop: u16,           // Last instruction opcode
-    rip: u64,           // Instruction pointer
-    rdp: u64,           // Data pointer
-    mxcsr: u32,         // MXCSR register
-    mxcr_mask: u32,     // MXCSR mask
+pub struct UserFpRegsStruct {
+    pub cwd: u16,           // Control word
+    pub swd: u16,           // Status word
+    pub ftw: u16,           // Tag word
+    pub fop: u16,           // Last instruction opcode
+    pub rip: u64,           // Instruction pointer
+    pub rdp: u64,           // Data pointer
+    pub mxcsr: u32,         // MXCSR register
+    pub mxcr_mask: u32,     // MXCSR mask
     /// x87 FPU / MMX registers (8 registers × 16 bytes each = 128 bytes)
     ///
     /// Each x87 register (ST0-ST7) is 80 bits (10 bytes) but stored in 16 bytes.
     /// MMX registers (MM0-MM7) alias the low 64 bits of ST0-ST7.
     /// Note: [u32; 32] = 32 × 4 = 128 bytes
-    st_space: [u32; 32],
+    pub st_space: [u32; 32],
     // 8 FP registers, 16 bytes each (128 bytes total)
     /// SSE registers (16 XMM registers × 16 bytes each = 256 bytes)
     /// Note: [u32; 64] = 64 × 4 = 256 bytes
-    xmm_space: [u32; 64],  // 16 XMM registers, 16 bytes each (256 bytes total)
-    padding: [u32; 24],
+    pub xmm_space: [u32; 64],  // 16 XMM registers, 16 bytes each (256 bytes total)
+    pub padding: [u32; 24],
 }
 
 const fn gpr_offset(reg_offset: usize) -> usize{
@@ -157,13 +247,13 @@ pub enum RegisterFormat {
 }
 
 pub struct Register {
-    id: RegisterId,
-    name: &'static str,
-    size: usize,
-    offset: usize,
-    register_type: RegisterType,
-    register_format: RegisterFormat,
-    dwarf_id: i32
+    pub id: RegisterId,
+    pub name: &'static str,
+    pub size: usize,
+    pub offset: usize,
+    pub register_type: RegisterType,
+    pub register_format: RegisterFormat,
+    pub dwarf_id: i32
 }
 
 impl Register {

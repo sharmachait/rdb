@@ -1,6 +1,6 @@
 use crate::rdb::process::Process;
 
-pub fn attach(args: Vec<String>) -> Result<Process, String> {
+pub unsafe fn attach(args: Vec<String>) -> Result<Process, String> {
     // -p target_pid
     if args.len() == 3 && args[1] == "-p" {
         // attach to an existing process

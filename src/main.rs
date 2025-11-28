@@ -3,6 +3,8 @@ use nix::sys::wait::{waitpid, WaitStatus};
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 use rdb::rdb::process::{Process, ProcessState};
+use rdb::rdb::process_registers::RegisterValue;
+use rdb::rdb::register_info::RegisterId;
 use rdb::utils::attach::attach;
 
 fn main() {
@@ -11,7 +13,7 @@ fn main() {
         eprintln!("give a process/binary path id to attach to");
         process::exit(1);
     }
-    let process:Result<Process, String> = attach(args);
+    let process:Result<Process, String> = unsafe { attach(args) };
     let mut process = match process {
         Ok(p) => {p}
         Err(e) => {
@@ -24,6 +26,8 @@ fn main() {
         Ok(WaitStatus::Stopped(child_pid, signal)) => {
             println!("Process {} stopped by signal {:?}", child_pid, signal);
             process.process_state = ProcessState::Stopped;
+            process.read_all_registers();
+            process.proc_registers.data_.print_user();
             debug(process);
         }
         Ok(status) => {

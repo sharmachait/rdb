@@ -2,16 +2,19 @@ use std::ffi::CString;
 use std::process;
 use nix::errno::Errno;
 use nix::fcntl::{fcntl, FcntlArg, FdFlag};
+use nix::libc::{ptrace, PTRACE_PEEKUSER, PTRACE_POKEUSER, PTRACE_SETFPREGS};
 use nix::sys::ptrace;
 use nix::sys::signal::{kill, Signal};
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{close, execvp, fork, pipe, read, write, ForkResult, Pid};
-
+use crate::rdb::process_registers::{ProcRegisters, RegisterValue};
+use crate::rdb::register_info::{Register, RegisterId, RegisterType, User, UserFpRegsStruct, UserRegsStruct};
 
 pub struct Process {
     pid: Pid,
     terminate_on_end: bool,
-    pub process_state: ProcessState
+    pub process_state: ProcessState,
+    pub proc_registers: ProcRegisters
 }
 
 #[derive(Copy, Clone)]
@@ -47,17 +50,24 @@ impl Drop for Process{
 }
 
 impl Process {
-    pub fn new(pid: Pid, terminate_on_end: bool, process_state: ProcessState) -> Self{
+    pub fn new(
+        pid: Pid,
+        terminate_on_end: bool,
+        process_state: ProcessState,
+        data: User
+    ) -> Self{
+        let proc_registers = ProcRegisters::new(data);
         Self {
             pid,
             terminate_on_end,
-            process_state
+            process_state,
+            proc_registers
         }
     }
     pub fn pid(&self) ->Pid{
         self.pid
     }
-    pub fn attach(pid_arg: &str) -> Result<Process, String> {
+    pub unsafe fn attach(pid_arg: &str) -> Result<Process, String> {
         let pid = pid_arg
             .parse::<i32>()
             .map_err(|_|"Invalid PID: not a valid number")?;
@@ -73,7 +83,9 @@ impl Process {
 
         let terminate_on_end = false;
 
-        let process = Process::new(Pid::from_raw(pid), terminate_on_end, process_state);
+        let data = User::default_user();
+
+        let process = Process::new(Pid::from_raw(pid), terminate_on_end, process_state, data);
 
         Ok(process)
     }
@@ -99,7 +111,9 @@ impl Process {
                     let pid = child.as_raw();
                     let process_state = ProcessState::Running;
                     let terminate_on_end = true;
-                    let process = Process::new(Pid::from_raw(pid), terminate_on_end, process_state);
+                    let data = User::default_user();
+
+                    let process = Process::new(Pid::from_raw(pid), terminate_on_end, process_state, data);
 
                     if bytes_read > 0 {
                         drop(process);
@@ -167,6 +181,17 @@ impl Process {
         match wait_res {
             Ok(status) => {
                 self.process_state = ProcessState::Stopped;
+                self.read_all_registers();
+                self.proc_registers.data_.print_user();
+                unsafe {
+                    self.write_to_user_by_register_id(
+                        RegisterId::Rax,
+                        RegisterValue::U32(12)
+                    )
+                }
+                println!("========================================================");
+                self.read_all_registers();
+                self.proc_registers.data_.print_user();
                 Ok(status)
             }
             Err(e) => {
@@ -174,6 +199,150 @@ impl Process {
                 self.process_state=ProcessState::Terminated;
                 Err(e)
             }
+        }
+    }
+    pub unsafe fn write_to_user_by_register_id(
+        &mut self,
+        id: RegisterId,
+        val: RegisterValue
+    ){
+        let register = Register::by_id(id);
+        let user_bytes = self.proc_registers.write_register(
+            register,
+            val
+        );
+        if register.register_type == RegisterType::Fpr {
+            self.write_fprs()
+        }else{
+            let offset = register.offset;
+
+            let offset = offset & !0b111;
+
+            let bytes = RegisterValue::from_bytes::<u64>(user_bytes.add(offset));
+            println!("----------------------------------------writing to user---------------------------------------------------------");
+            self.write_user(offset, bytes);
+        }
+    }
+
+    fn write_user(&self,offset: usize, data: u64) {
+        use nix::libc::{ptrace, PTRACE_POKEUSER};
+        let result = unsafe {
+            ptrace(
+                PTRACE_POKEUSER,
+                self.pid.as_raw(),
+                offset,
+                data
+            )
+        };
+        if result < 0 {
+            panic!("Couldnt write to user");
+        }
+    }
+
+    fn write_fprs(&self) {
+        use nix::libc::{ptrace, PTRACE_SETFPREGS};
+        let fprs = &self.proc_registers.data_.i387;
+        let result = unsafe {
+            ptrace(
+                PTRACE_SETFPREGS,
+                self.pid.as_raw(),
+                std::ptr::null_mut::<std::ffi::c_void>(),
+                &fprs as *const _ as *const std::ffi::c_void
+            )
+        };
+        if result < 0 {
+            panic!("Couldnt write to Floating point registers");
+        }
+    }
+
+    fn write_gprs(&self) {
+        use nix::libc::{ptrace, PTRACE_SETREGS};
+        let gprs = &self.proc_registers.data_.regs;
+        let result = unsafe {
+            ptrace(
+                PTRACE_SETREGS,
+                self.pid.as_raw(),
+                std::ptr::null_mut::<std::ffi::c_void>(),
+                &gprs as *const _ as *const std::ffi::c_void
+            )
+        };
+        if result < 0 {
+            panic!("Couldnt write to General purpose registers");
+        }
+    }
+    pub fn read_all_registers(&mut self) {
+        use nix::libc::{ptrace as libc_ptrace, PTRACE_GETFPREGS};
+        let regs_libc = ptrace::getregs(self.pid)
+            .unwrap_or_else(|e|panic!("Couldnt read GPR registers: {}", e));
+        self.proc_registers.data_.regs = UserRegsStruct {
+            r15: regs_libc.r15,
+            r14: regs_libc.r14,
+            r13: regs_libc.r13,
+            r12: regs_libc.r12,
+            rbp: regs_libc.rbp,
+            rbx: regs_libc.rbx,
+            r11: regs_libc.r11,
+            r10: regs_libc.r10,
+            r9: regs_libc.r9,
+            r8: regs_libc.r8,
+            rax: regs_libc.rax,
+            rcx: regs_libc.rcx,
+            rdx: regs_libc.rdx,
+            rsi: regs_libc.rsi,
+            rdi: regs_libc.rdi,
+            orig_rax: regs_libc.orig_rax,
+            rip: regs_libc.rip,
+            cs: regs_libc.cs,
+            eflags: regs_libc.eflags,
+            rsp: regs_libc.rsp,
+            ss: regs_libc.ss,
+            fs_base: regs_libc.fs_base,
+            gs_base: regs_libc.gs_base,
+            ds: regs_libc.ds,
+            es: regs_libc.es,
+            fs: regs_libc.fs,
+            gs: regs_libc.gs,
+        };
+
+        let mut fpregs: UserFpRegsStruct  = unsafe {std::mem::zeroed()};
+        let result = unsafe {
+            ptrace(
+                PTRACE_GETFPREGS,
+                self.pid.as_raw(),
+                std::ptr::null_mut::<std::ffi::c_void>(),
+                &fpregs as *const _ as *const std::ffi::c_void
+            )
+        };
+        if result < 0 {
+            panic!("Couldnt read to Floating point registers");
+        }else {
+            self.proc_registers.data_.i387 = fpregs;
+        }
+        let dbrs_ids = [
+            RegisterId::Dr0,
+            RegisterId::Dr1,
+            RegisterId::Dr2,
+            RegisterId::Dr3,
+            RegisterId::Dr4,
+            RegisterId::Dr5,
+            RegisterId::Dr6,
+            RegisterId::Dr7,
+        ];
+        for (i, id) in dbrs_ids.iter().enumerate() {
+            let register = Register::by_id(*id);
+            Errno::clear();
+            let data = unsafe{
+                libc_ptrace(
+                    PTRACE_PEEKUSER,
+                    self.pid.as_raw(),
+                    register.offset,
+                    std::ptr::null_mut::<std::ffi::c_void>()
+                )
+            };
+            if Errno::last() != Errno::UnknownErrno {
+                panic!("Couldnt read Debug registers");
+            }
+            self.proc_registers.data_.u_debugreg[i] = data as u64;
         }
     }
 }

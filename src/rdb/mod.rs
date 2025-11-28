@@ -1,2 +1,3 @@
 pub mod process;
-mod register_info;
+pub mod register_info;
+pub mod process_registers;

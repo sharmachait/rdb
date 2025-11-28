@@ -8,6 +8,7 @@ use nix::sys::ptrace;
 use nix::sys::wait::waitpid;
 use nix::unistd::{close, execvp, fork, pipe, read, write, ForkResult, Pid};
 use rdb::rdb::process::{Process, ProcessState};
+use rdb::rdb::register_info::User;
 
 #[test]
 fn test_process_launch_success(){
@@ -77,7 +78,9 @@ fn launch_test_process(program_path: &str) -> Result<Process, String> {
                 let pid = child.as_raw();
                 let process_state = ProcessState::Running;
                 let terminate_on_end = true;
-                let process = Process::new(Pid::from_raw(pid), terminate_on_end, process_state);
+                let data = User::default_user();
+
+                let process = Process::new(Pid::from_raw(pid), terminate_on_end, process_state, data);
 
                 if bytes_read > 0 {
                     drop(process);
@@ -118,7 +121,7 @@ fn test_process_attach_success(){
     let launch_res = launch_test_process("yes");
 
     match launch_res{
-        Ok(proc) => {
+        Ok(proc) => unsafe {
             let pid_arg = proc.pid().as_raw().to_string();
             let attach_res = Process::attach(&pid_arg);
             if let Err(_) = attach_res {
@@ -174,12 +177,14 @@ fn get_process_state(pid: u32) -> Result<char, String> {
 
 #[test]
 fn test_process_attach_pid_0_fails(){
-    match Process::attach("0"){
-        Ok(_) => {
-            assert!(false, "attached to process with pid 0")
-        }
-        Err(_) => {
-            assert!(true)
+    unsafe {
+        match Process::attach("0") {
+            Ok(_) => {
+                assert!(false, "attached to process with pid 0")
+            }
+            Err(_) => {
+                assert!(true)
+            }
         }
     }
 }
