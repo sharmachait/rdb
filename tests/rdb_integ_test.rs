@@ -1,7 +1,3 @@
-use std::ffi::CString;
-use std::path::Path;
-use std::process;
-use std::time::Duration;
 use nix::fcntl::{fcntl, FcntlArg, FdFlag};
 use nix::libc::pid_t;
 use nix::sys::ptrace;
@@ -9,11 +5,14 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{close, execvp, fork, pipe, read, write, ForkResult, Pid};
 use rdb::rdb::process::{Process, ProcessState};
 use rdb::rdb::register_info::User;
+use std::ffi::CString;
+use std::path::Path;
+use std::process;
+use std::time::Duration;
 
 #[test]
-fn test_process_launch_success(){
-    let proc = Process::launch("yes")
-        .expect("Failed to launch process");
+fn test_process_launch_success() {
+    let proc = Process::launch("yes", None).expect("Failed to launch process");
 
     assert!(process_running(proc.pid()));
     drop(proc);
@@ -45,19 +44,17 @@ fn process_running(pid: Pid) -> bool {
 // }
 
 #[test]
-fn test_process_launch_nonexistent_process(){
-    let proc = Process::launch("/random/non/existent/path/hopefully");
+fn test_process_launch_nonexistent_process() {
+    let proc = Process::launch("/random/non/existent/path/hopefully", None);
     if let Err(_) = proc {
         assert!(true)
-    }else{
+    } else {
         assert!(false)
     }
 }
 
-
-
 fn launch_test_process(program_path: &str) -> Result<Process, String> {
-    let (read_fd, write_fd) = pipe().map_err(|e|format!("pipe failed: {}", e))?;
+    let (read_fd, write_fd) = pipe().map_err(|e| format!("pipe failed: {}", e))?;
 
     fcntl(&read_fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).ok();
 
@@ -66,10 +63,10 @@ fn launch_test_process(program_path: &str) -> Result<Process, String> {
     unsafe {
         let fork_res = fork();
         match fork_res {
-            Ok(ForkResult::Parent {child}) => {
+            Ok(ForkResult::Parent { child }) => {
                 close(write_fd).ok(); //  we only want to read from the parent
 
-                let mut buffer:[u8;256] = [0;256];
+                let mut buffer: [u8; 256] = [0; 256];
 
                 let bytes_read = read(&read_fd, &mut buffer).unwrap_or(0);
 
@@ -80,7 +77,8 @@ fn launch_test_process(program_path: &str) -> Result<Process, String> {
                 let terminate_on_end = true;
                 let data = User::default_user();
 
-                let process = Process::new(Pid::from_raw(pid), terminate_on_end, process_state, data);
+                let process =
+                    Process::new(Pid::from_raw(pid), terminate_on_end, process_state, data);
 
                 if bytes_read > 0 {
                     drop(process);
@@ -93,8 +91,7 @@ fn launch_test_process(program_path: &str) -> Result<Process, String> {
             Ok(ForkResult::Child) => {
                 close(read_fd).ok(); // we only want to write from the child
 
-                let program_path_c = CString::new(program_path)
-                    .expect("Cstring conversion failed");
+                let program_path_c = CString::new(program_path).expect("Cstring conversion failed");
                 let exec_args = vec![program_path_c.clone()];
                 let exec_res = execvp(&program_path_c, &exec_args);
 
@@ -102,25 +99,26 @@ fn launch_test_process(program_path: &str) -> Result<Process, String> {
                 // nor do we ever close it
 
                 if let Err(e) = exec_res {
-                    let _ = write(&write_fd, format!("Tracing child process failed: {}", e).as_bytes());
+                    let _ = write(
+                        &write_fd,
+                        format!("Tracing child process failed: {}", e).as_bytes(),
+                    );
                     eprintln!("Exec failed: {}", e);
                     close(write_fd).ok();
-                    return Err(format!("Exec Failed!: {}", e))
+                    return Err(format!("Exec Failed!: {}", e));
                 }
                 unreachable!();
             }
-            Err(e) => {
-                Err(format!("Fork failed: {}", e))
-            }
+            Err(e) => Err(format!("Fork failed: {}", e)),
         }
     }
 }
 
 #[test]
-fn test_process_attach_success(){
+fn test_process_attach_success() {
     let launch_res = launch_test_process("yes");
 
-    match launch_res{
+    match launch_res {
         Ok(proc) => unsafe {
             let pid_arg = proc.pid().as_raw().to_string();
             let attach_res = Process::attach(&pid_arg);
@@ -131,13 +129,13 @@ fn test_process_attach_success(){
             let process_state: Result<char, String> = get_process_state(proc.pid().as_raw() as u32);
             match process_state {
                 Ok(c) => {
-                    assert_eq!(c,'t')
+                    assert_eq!(c, 't')
                 }
                 Err(s) => {
                     assert!(false, "{}", s)
                 }
             }
-        }
+        },
         Err(s) => {
             assert!(false, "{}", s);
         }
@@ -150,33 +148,27 @@ fn get_process_state(pid: u32) -> Result<char, String> {
     let data = std::fs::read_to_string(path.clone());
     let data = if let Ok(d) = data {
         d
-    }else{
+    } else {
         return Err(format!("Failed to read data from {}", path));
     };
 
     let paren_index = data.rfind(')');
 
     match paren_index {
-        None => {
-            Err("Data in invalid format".to_string())
-        }
+        None => Err("Data in invalid format".to_string()),
         Some(i) => {
-            let state_index = i+2;
+            let state_index = i + 2;
             let state = data.chars().nth(state_index);
             match state {
-                None => {
-                    Err("Data in invalid format".to_string())
-                }
-                Some(c) => {
-                    Ok(c)
-                }
+                None => Err("Data in invalid format".to_string()),
+                Some(c) => Ok(c),
             }
         }
     }
 }
 
 #[test]
-fn test_process_attach_pid_0_fails(){
+fn test_process_attach_pid_0_fails() {
     unsafe {
         match Process::attach("0") {
             Ok(_) => {

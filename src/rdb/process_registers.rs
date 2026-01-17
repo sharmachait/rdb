@@ -1,49 +1,43 @@
+use crate::rdb::register_info::RegisterFormat::{DoubleFloat, LongDouble};
+use crate::rdb::register_info::{Register, RegisterFormat, RegisterId, RegisterType, User};
 use std::any::TypeId;
 use std::fmt;
-use crate::rdb::register_info::{Register, RegisterFormat, RegisterId, User};
-use crate::rdb::register_info::RegisterFormat::{DoubleFloat, LongDouble};
 
 pub struct ProcRegisters {
-    pub data_: User
+    pub data_: User,
 }
 
 impl ProcRegisters {
-    pub fn new(user: User)-> Self{
-        Self {
-            data_: user
-        }
+    pub fn new(user: User) -> Self {
+        Self { data_: user }
     }
-    pub unsafe fn get_register_val_by_id(
-        &mut self,
-        id: RegisterId
-    ) -> Result<RegisterValue, &str> {
+    pub unsafe fn get_register_val_by_id(&mut self, id: RegisterId) -> Result<RegisterValue, &str> {
         let register = Register::by_id(id);
         self.get_register_val(register)
     }
     unsafe fn get_register_val(&mut self, register: &Register) -> Result<RegisterValue, &str> {
         let bytes = RegisterValue::as_bytes_const(&self.data_);
         let offset = register.offset;
+
         if register.register_format == RegisterFormat::Uint {
             match register.size {
-                1 =>  {
+                1 => {
                     let val = RegisterValue::from_bytes::<u8>(bytes.add(offset));
                     Ok(RegisterValue::U8(val))
-                },
+                }
                 2 => {
                     let val = RegisterValue::from_bytes::<u16>(bytes.add(offset));
                     Ok(RegisterValue::U16(val))
-                },
+                }
                 4 => {
                     let val = RegisterValue::from_bytes::<u32>(bytes.add(offset));
                     Ok(RegisterValue::U32(val))
-                },
+                }
                 8 => {
                     let val = RegisterValue::from_bytes::<u64>(bytes.add(offset));
                     Ok(RegisterValue::U64(val))
-                },
-                _ => {
-                    Err("Unexepected register size")
                 }
+                _ => Err("Unexpected register size"),
             }
         } else if register.register_format == DoubleFloat {
             let val = RegisterValue::from_bytes::<f64>(bytes.add(offset));
@@ -79,43 +73,88 @@ impl ProcRegisters {
 
             Ok(RegisterValue::LongDouble(x87_bytes))
         } else if register.register_format == RegisterFormat::Vector && register.size == 8 {
-            let val =  RegisterValue::from_bytes::<[u8;8]>(bytes.add(offset));
+            let val = RegisterValue::from_bytes::<[u8; 8]>(bytes.add(offset));
             Ok(RegisterValue::Byte64(val))
-        }else {
-            let val =  RegisterValue::from_bytes::<[u8;16]>(bytes.add(offset));
+        } else {
+            let val = RegisterValue::from_bytes::<[u8; 16]>(bytes.add(offset));
             Ok(RegisterValue::Byte128(val))
         }
     }
-    pub unsafe fn write_register(
-        &mut self,
-        register: &Register,
-        val :RegisterValue
-    ) -> *mut u8 {
-        let user_bytes: *mut u8 = RegisterValue::as_bytes_mut( &mut self.data_);
+
+    pub unsafe fn write_register(&mut self, register: &Register, val: RegisterValue) -> *mut u8 {
+        let val_size = val.size_of();
+        if val_size > register.size {
+            return std::ptr::null_mut();
+        }
+
+        // Special handling for FPR registers (st_space)
+        if register.register_type == RegisterType::Fpr
+            && register.register_format == RegisterFormat::LongDouble
+        {
+            let x87_bytes = match val {
+                RegisterValue::LongDouble(bytes) => bytes,
+                _ => return std::ptr::null_mut(),
+            };
+
+            // Calculate which ST register (0-7)
+            let st_index = match register.id {
+                RegisterId::St0 => 0,
+                RegisterId::St1 => 1,
+                RegisterId::St2 => 2,
+                RegisterId::St3 => 3,
+                RegisterId::St4 => 4,
+                RegisterId::St5 => 5,
+                RegisterId::St6 => 6,
+                RegisterId::St7 => 7,
+                _ => return std::ptr::null_mut(),
+            };
+
+            // Each ST register = 4 u32s (16 bytes) in st_space, but we only use first 10 bytes
+            let base_index = st_index * 4;
+
+            // Convert the 10 bytes to u32 values
+            for i in 0..2 {
+                let u32_bytes = [
+                    x87_bytes[i * 4],
+                    x87_bytes[i * 4 + 1],
+                    x87_bytes[i * 4 + 2],
+                    x87_bytes[i * 4 + 3],
+                ];
+                self.data_.i387.st_space[base_index + i] = u32::from_le_bytes(u32_bytes);
+            }
+            // Last 2 bytes go into third u32 (lower 2 bytes)
+            let u32_bytes = [x87_bytes[8], x87_bytes[9], 0, 0];
+            self.data_.i387.st_space[base_index + 2] = u32::from_le_bytes(u32_bytes);
+
+            // Zero out the padding
+            self.data_.i387.st_space[base_index + 3] = 0;
+
+            return &mut self.data_ as *mut _ as *mut u8;
+        }
+
+        // Original code for non-FPR registers
+        let user_bytes: *mut u8 = RegisterValue::as_bytes_mut(&mut self.data_);
         let reg_offset = register.offset;
         let reg_size = register.size;
 
         let val_bytes = match val {
-            RegisterValue::U8(v) => {RegisterValue::widen(register, v)}
-            RegisterValue::U16(v) => {RegisterValue::widen(register, v)}
-            RegisterValue::U32(v) => {RegisterValue::widen(register, v)}
-            RegisterValue::U64(v) => {RegisterValue::widen(register, v)}
-            RegisterValue::I8(v) => {RegisterValue::widen(register, v)}
-            RegisterValue::I16(v) => {RegisterValue::widen(register, v)}
-            RegisterValue::I32(v) => {RegisterValue::widen(register, v)}
-            RegisterValue::I64(v) => {RegisterValue::widen(register, v)}
-            RegisterValue::Float(v) => {RegisterValue::widen(register, v)}
-            RegisterValue::Double(v) => {RegisterValue::widen(register, v)}
-            RegisterValue::LongDouble(v) => {RegisterValue::widen(register, v)}
-            RegisterValue::Byte64(v) => {RegisterValue::widen(register, v)}
-            RegisterValue::Byte128(v) => {RegisterValue::widen(register, v)}
+            RegisterValue::U8(v) => RegisterValue::widen(register, v),
+            RegisterValue::U16(v) => RegisterValue::widen(register, v),
+            RegisterValue::U32(v) => RegisterValue::widen(register, v),
+            RegisterValue::U64(v) => RegisterValue::widen(register, v),
+            RegisterValue::I8(v) => RegisterValue::widen(register, v),
+            RegisterValue::I16(v) => RegisterValue::widen(register, v),
+            RegisterValue::I32(v) => RegisterValue::widen(register, v),
+            RegisterValue::I64(v) => RegisterValue::widen(register, v),
+            RegisterValue::Float(v) => RegisterValue::widen(register, v),
+            RegisterValue::Double(v) => RegisterValue::widen(register, v),
+            RegisterValue::Byte64(v) => RegisterValue::widen(register, v),
+            RegisterValue::Byte128(v) => RegisterValue::widen(register, v),
+            RegisterValue::LongDouble(v) => RegisterValue::widen(register, v),
+            _ => return std::ptr::null_mut(),
         };
 
-        std::ptr::copy_nonoverlapping(
-            val_bytes.as_ptr(),
-            user_bytes.add(reg_offset),
-            reg_size
-        );
+        std::ptr::copy_nonoverlapping(val_bytes.as_ptr(), user_bytes.add(reg_offset), reg_size);
         user_bytes
     }
 }
@@ -135,6 +174,7 @@ pub enum RegisterValue {
     Byte64([u8; 8]),
     Byte128([u8; 16]),
 }
+
 impl fmt::Display for RegisterValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -186,23 +226,8 @@ impl fmt::Display for RegisterValue {
         }
     }
 }
-
 impl RegisterValue {
-    pub fn as_bytes_mut<From>(obj: &mut From) -> *mut u8{
-        obj as *mut From as *mut u8
-    }
-    pub fn as_bytes_const<From>(obj: &From) -> *const u8{
-        obj as *const From as *const u8
-    }
-    pub unsafe fn from_bytes<To>(bytes: *const u8) -> To {
-        let mut ret :To = std::mem::zeroed();
-        std::ptr::copy_nonoverlapping(
-            bytes,
-            &mut ret as *mut To as *mut u8,
-            size_of::<To>()
-        );
-        ret
-    }
+    // Convert x87 10-byte format to f64 for reading
     fn x87_to_f64(bytes: &[u8; 10]) -> f64 {
         // Extract mantissa (8 bytes)
         let mantissa = u64::from_le_bytes([
@@ -241,6 +266,8 @@ impl RegisterValue {
 
         f64::from_bits(ieee_bits)
     }
+
+    // Convert f64 to x87 10-byte format for writing
     pub(crate) fn f64_to_x87(val: f64) -> [u8; 10] {
         let mut result = [0u8; 10];
 
@@ -272,6 +299,29 @@ impl RegisterValue {
 
         result
     }
+    pub fn size_of(&self) -> usize {
+        match self {
+            RegisterValue::U8(_) | RegisterValue::I8(_) => 1,
+            RegisterValue::U16(_) | RegisterValue::I16(_) => 2,
+            RegisterValue::U32(_) | RegisterValue::I32(_) | RegisterValue::Float(_) => 4,
+            RegisterValue::U64(_) | RegisterValue::I64(_) | RegisterValue::Double(_) => 8,
+            RegisterValue::LongDouble(_) => 10, // x87 80-bit
+            RegisterValue::Byte64(_) => 8,
+            RegisterValue::Byte128(_) => 16,
+        }
+    }
+    pub fn as_bytes_mut<From>(obj: &mut From) -> *mut u8 {
+        obj as *mut From as *mut u8
+    }
+    pub fn as_bytes_const<From>(obj: &From) -> *const u8 {
+        obj as *const From as *const u8
+    }
+    pub unsafe fn from_bytes<To>(bytes: *const u8) -> To {
+        let mut ret: To = std::mem::zeroed();
+        std::ptr::copy_nonoverlapping(bytes, &mut ret as *mut To as *mut u8, size_of::<To>());
+        ret
+    }
+    // Updated widen function
     pub unsafe fn widen<From: 'static>(register: &Register, t: From) -> [u8; 16] {
         if RegisterValue::is_floating_point::<From>() {
             if register.register_format == RegisterFormat::DoubleFloat {
@@ -314,6 +364,7 @@ impl RegisterValue {
             RegisterValue::to_byte128(t)
         }
     }
+
     fn is_floating_point<T: 'static>() -> bool {
         let tid = std::any::TypeId::of::<T>();
         tid == std::any::TypeId::of::<f32>()
@@ -324,18 +375,12 @@ impl RegisterValue {
         let mut result = [0u8; 16];
         let ptr = &bytes as *const From as *const u8;
         let size = std::mem::size_of::<From>();
-        std::ptr::copy_nonoverlapping(
-            ptr,
-            result.as_mut_ptr(),
-            size.min(16)
-        );
+        std::ptr::copy_nonoverlapping(ptr, result.as_mut_ptr(), size.min(16));
         result
     }
     fn is_signed<From: 'static>() -> bool {
         use std::any::TypeId;
         let tid = TypeId::of::<From>();
-        tid == TypeId::of::<i16>() ||
-            tid == TypeId::of::<i32>() ||
-            tid == TypeId::of::<i64>()
+        tid == TypeId::of::<i16>() || tid == TypeId::of::<i32>() || tid == TypeId::of::<i64>()
     }
 }
