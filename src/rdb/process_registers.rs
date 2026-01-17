@@ -48,8 +48,34 @@ impl ProcRegisters {
             let val = RegisterValue::from_bytes::<f64>(bytes.add(offset));
             Ok(RegisterValue::Double(val))
         } else if register.register_format == LongDouble {
-            let val =  RegisterValue::from_bytes::<f128::f128>(bytes.add(offset));
-            Ok(RegisterValue::LongDouble(val))
+            let st_index = match register.id {
+                RegisterId::St0 => 0,
+                RegisterId::St1 => 1,
+                RegisterId::St2 => 2,
+                RegisterId::St3 => 3,
+                RegisterId::St4 => 4,
+                RegisterId::St5 => 5,
+                RegisterId::St6 => 6,
+                RegisterId::St7 => 7,
+                _ => return Err("Invalid ST register"),
+            };
+
+            // Read 16 bytes from st_space (4 u32s per ST register)
+            let base_index = st_index * 4;
+            let mut x87_bytes = [0u8; 10];
+
+            // Extract the actual 10 bytes of x87 data
+            for i in 0..2 {
+                let u32_val = self.data_.i387.st_space[base_index + i];
+                let bytes_chunk = u32_val.to_le_bytes();
+                x87_bytes[i * 4..(i + 1) * 4].copy_from_slice(&bytes_chunk);
+            }
+            // Get remaining 2 bytes from third u32
+            let u32_val = self.data_.i387.st_space[base_index + 2];
+            let bytes_chunk = u32_val.to_le_bytes();
+            x87_bytes[8..10].copy_from_slice(&bytes_chunk[0..2]);
+
+            Ok(RegisterValue::LongDouble(x87_bytes))
         } else if register.register_format == RegisterFormat::Vector && register.size == 8 {
             let val =  RegisterValue::from_bytes::<[u8;8]>(bytes.add(offset));
             Ok(RegisterValue::Byte64(val))
@@ -103,7 +129,7 @@ pub enum RegisterValue {
     I64(i64),
     Float(f32),
     Double(f64),
-    LongDouble(f128::f128),
+    LongDouble([u8;10]),
     Byte64([u8; 8]),
     Byte128([u8; 16]),
 }
@@ -124,14 +150,95 @@ impl RegisterValue {
         );
         ret
     }
+    // Convert x87 10-byte format to f64 for reading
+    fn x87_to_f64(bytes: &[u8; 10]) -> f64 {
+        // Extract mantissa (8 bytes)
+        let mantissa = u64::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+        ]);
+
+        // Extract sign and exponent (2 bytes)
+        let sign_and_exp = u16::from_le_bytes([bytes[8], bytes[9]]);
+        let sign = (sign_and_exp >> 15) & 1;
+        let x87_exp = sign_and_exp & 0x7FFF;
+
+        // Check for zero
+        if mantissa == 0 && x87_exp == 0 {
+            return if sign == 1 { -0.0 } else { 0.0 };
+        }
+
+        // Convert x87 to IEEE 754 double
+        let ieee_exp = (x87_exp as i32) - 16383 + 1023;
+
+        // Check for overflow/underflow
+        if ieee_exp <= 0 {
+            return if sign == 1 { -0.0 } else { 0.0 };
+        }
+        if ieee_exp >= 0x7FF {
+            return if sign == 1 { f64::NEG_INFINITY } else { f64::INFINITY };
+        }
+
+        // Extract top 52 bits of mantissa (remove explicit leading 1)
+        let ieee_mantissa = (mantissa << 1) >> 12;
+
+        // Construct IEEE 754 double
+        let ieee_bits = ((sign as u64) << 63)
+            | ((ieee_exp as u64) << 52)
+            | (ieee_mantissa & 0xFFFFFFFFFFFFF);
+
+        f64::from_bits(ieee_bits)
+    }
+    pub fn f64_to_x87(val: f64) -> [u8; 10] {
+        let mut result = [0u8; 10];
+
+        if val == 0.0 {
+            return result;
+        }
+
+        let bits = val.to_bits();
+        let sign = (bits >> 63) & 1;
+        let exp = ((bits >> 52) & 0x7FF) as i32;
+        let mantissa = bits & 0xFFFFFFFFFFFFF;
+
+        if exp == 0 {
+            return result;
+        }
+
+        if exp == 0x7FF {
+            return result;
+        }
+
+        let x87_exp = (exp - 1023 + 16383) as u16;
+        let x87_mantissa = (1u64 << 63) | (mantissa << 11);
+
+        // Layout: [mantissa: 8 bytes][sign+exp: 2 bytes]
+        result[0..8].copy_from_slice(&x87_mantissa.to_le_bytes());
+
+        let sign_and_exp = ((sign as u16) << 15) | (x87_exp & 0x7FFF);
+        result[8..10].copy_from_slice(&sign_and_exp.to_le_bytes());
+
+        result
+    }
     pub unsafe fn widen<From: 'static>(register: &Register, t: From) -> [u8; 16] {
         if RegisterValue::is_floating_point::<From>() {
             if register.register_format == RegisterFormat::DoubleFloat {
                 let val = std::mem::transmute_copy::<From, f64>(&t);
                  RegisterValue::to_byte128(val)
             }else if register.register_format == RegisterFormat::LongDouble {
-                let val = std::mem::transmute_copy::<From, f128::f128>(&t);
-                 RegisterValue::to_byte128(val)
+                // For LongDouble with [u8; 10] input
+                if std::any::TypeId::of::<From>() == std::any::TypeId::of::<[u8; 10]>() {
+                    let bytes = std::mem::transmute_copy::<From, [u8; 10]>(&t);
+                    let mut result = [0u8; 16];
+                    result[0..10].copy_from_slice(&bytes);
+                    return result;
+                }
+                // For f64 input, convert to x87
+                let val = std::mem::transmute_copy::<From, f64>(&t);
+                let x87_bytes = RegisterValue::f64_to_x87(val);
+                let mut result = [0u8; 16];
+                result[0..10].copy_from_slice(&x87_bytes);
+                result
             }else{
                  RegisterValue::to_byte128(t)
             }
@@ -162,7 +269,7 @@ impl RegisterValue {
         let tid = TypeId::of::<T>();
         tid == TypeId::of::<f32>() ||
             tid == TypeId::of::<f64>() ||
-            tid == TypeId::of::<f128::f128>()
+            tid == std::any::TypeId::of::<[u8; 10]>()
     }
     unsafe fn to_byte128<From>(bytes: From) -> [u8; 16] {
         let mut result = [0u8; 16];
