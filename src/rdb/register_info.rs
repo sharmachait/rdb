@@ -1,4 +1,5 @@
 use std::mem::offset_of;
+use crate::rdb::process_registers::RegisterValue;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum RegisterId { // 125 registers in total
@@ -266,6 +267,90 @@ impl Register {
     pub fn by_id(id: RegisterId) -> &'static Self {
         &REGISTERS[id as usize]
     }
+    pub fn parse_value(&self, val_str: &str) -> Result<RegisterValue, &str> {
+        match self.register_format {
+            RegisterFormat::Uint => {
+                match self.size {
+                    1 => str_to_int::<u8>(val_str, 16)
+                        .map(RegisterValue::U8)
+                        .ok_or("Invalid format"),
+                    2 => str_to_int::<u16>(val_str, 16)
+                        .map(RegisterValue::U16)
+                        .ok_or("Invalid format"),
+                    4 => str_to_int::<u32>(val_str, 16)
+                        .map(RegisterValue::U32)
+                        .ok_or("Invalid format"),
+                    8 => str_to_int::<u64>(val_str, 16)
+                        .map(RegisterValue::U64)
+                        .ok_or("Invalid format"),
+                    _ => Err("Invalid format"),
+                }
+            }
+            RegisterFormat::DoubleFloat => str_to_float::<f64>(val_str)
+                .map(RegisterValue::Double)
+                .ok_or("Invalid format"),
+            RegisterFormat::LongDouble => {
+                // Parse as f64, then convert to x87 bytes
+                str_to_float::<f64>(val_str)
+                    .map(|f| RegisterValue::LongDouble(RegisterValue::f64_to_x87(f)))
+                    .ok_or("Invalid format")
+            }
+            RegisterFormat::Vector => match self.size {
+                8 => str_to_vector::<8>(val_str)
+                    .map(RegisterValue::Byte64)
+                    .ok_or("Invalid format"),
+                16 => str_to_vector::<16>(val_str)
+                    .map(RegisterValue::Byte128)
+                    .ok_or("Invalid format"),
+                _ => Err("Invalid format"),
+            },
+        }
+    }
+}
+fn str_to_vector<const N: usize>(s: &str) -> Option<[u8; N]> {
+    let mut bytes = [0u8; N];
+    let mut chars = s.chars().peekable();
+
+    if chars.next()? != '[' {
+        return None;
+    }
+    for i in 0..N {
+        // Parse hex byte (expecting format like "0x12")
+        let hex_str: String = chars.by_ref().take(4).collect();
+        bytes[i] = str_to_int::<u8>(&hex_str, 16)?;
+        // Expect ',' or ']'
+        match chars.peek()? {
+            ',' if i < N - 1 => {
+                chars.next();
+            }
+            ']' => {
+                chars.next();
+                break;
+            }
+            _ => return None,
+        }
+    }
+    if chars.next().is_some() {
+        return None;
+    }
+    Some(bytes)
+}
+
+fn str_to_int<T>(s: &str, base: u32) -> Option<T>
+where
+    T: num_traits::Num,
+{
+    let s = if base == 16 && s.starts_with("0x") {
+        &s[2..]
+    } else {
+        s
+    };
+
+    T::from_str_radix(s, base).ok()
+}
+
+fn str_to_float<F: std::str::FromStr>(s: &str) -> Option<F> {
+    s.parse::<F>().ok()
 }
 
 pub const REGISTERS: &[Register] = &[

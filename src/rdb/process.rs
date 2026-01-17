@@ -270,10 +270,10 @@ impl Process {
             panic!("Couldnt write to General purpose registers");
         }
     }
-    pub fn read_all_registers(&mut self) {
+    pub fn read_all_registers(&mut self) -> Result<&str, &str> {
         use nix::libc::{ptrace as libc_ptrace, PTRACE_GETFPREGS};
         let regs_libc = ptrace::getregs(self.pid)
-            .unwrap_or_else(|e|panic!("Couldnt read GPR registers: {}", e));
+            .unwrap_or_else(|e| panic!("Couldnt read GPR registers: {}", e));
         self.proc_registers.data_.regs = UserRegsStruct {
             r15: regs_libc.r15,
             r14: regs_libc.r14,
@@ -314,8 +314,8 @@ impl Process {
             )
         };
         if result < 0 {
-            panic!("Couldnt read to Floating point registers");
-        }else {
+            return Err("Couldnt read to Floating point registers");
+        } else {
             self.proc_registers.data_.i387 = fpregs;
         }
         let dbrs_ids = [
@@ -331,18 +331,19 @@ impl Process {
         for (i, id) in dbrs_ids.iter().enumerate() {
             let register = Register::by_id(*id);
             Errno::clear();
-            let data = unsafe{
+            let data = unsafe {
                 libc_ptrace(
                     PTRACE_PEEKUSER,
                     self.pid.as_raw(),
                     register.offset,
-                    std::ptr::null_mut::<std::ffi::c_void>()
+                    std::ptr::null_mut::<std::ffi::c_void>(),
                 )
             };
             if Errno::last() != Errno::UnknownErrno {
-                panic!("Couldnt read Debug registers");
+                return Err("Couldnt read Debug registers");
             }
             self.proc_registers.data_.u_debugreg[i] = data as u64;
         }
+        Ok("Read all registers")
     }
 }

@@ -1,11 +1,11 @@
-use std::{env, process};
 use nix::sys::wait::{waitpid, WaitStatus};
-use rustyline::DefaultEditor;
-use rustyline::error::ReadlineError;
 use rdb::rdb::process::{Process, ProcessState};
 use rdb::rdb::process_registers::RegisterValue;
 use rdb::rdb::register_info::RegisterId;
 use rdb::utils::attach::attach;
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
+use std::{env, process};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -13,9 +13,9 @@ fn main() {
         eprintln!("give a process/binary path id to attach to");
         process::exit(1);
     }
-    let process:Result<Process, String> = unsafe { attach(args) };
+    let process: Result<Process, String> = unsafe { attach(args) };
     let mut process = match process {
-        Ok(p) => {p}
+        Ok(p) => p,
         Err(e) => {
             eprintln!("Error: {}", e);
             process::exit(1);
@@ -26,8 +26,11 @@ fn main() {
         Ok(WaitStatus::Stopped(child_pid, signal)) => {
             println!("Process {} stopped by signal {:?}", child_pid, signal);
             process.process_state = ProcessState::Stopped;
-            process.read_all_registers();
-            process.proc_registers.data_.print_user();
+            let res = process.read_all_registers();
+            if let Err(e) = res {
+                eprintln!("{}", e);
+                return;
+            }
             debug(process);
         }
         Ok(status) => {
@@ -45,13 +48,13 @@ fn main() {
 
 fn debug(mut process: Process) {
     let mut rl = DefaultEditor::new().unwrap();
-    if let Err(e) = rl.load_history(".history"){
+    if let Err(e) = rl.load_history(".history") {
         println!("No previous history.");
     }
     loop {
         let readline = rl.readline("rdb>> ");
         match readline {
-            Ok(line) => {
+            Ok(line) => unsafe {
                 if line != "" {
                     let _ = rl.add_history_entry(line.as_str());
                     process.dispatch_command(line);
@@ -64,13 +67,13 @@ fn debug(mut process: Process) {
                 // CTRL + c
                 println!("^C");
                 continue;
-            },
+            }
             Err(ReadlineError::Eof) => {
                 // CTRL + d
                 println!("Exiting Debugger - CTRL + D");
                 drop(process);
                 break;
-            },
+            }
             Err(e) => {
                 eprintln!("Error: {:?}", e);
                 break;
@@ -79,5 +82,3 @@ fn debug(mut process: Process) {
     }
     let _ = rl.save_history(".history");
 }
-
-
