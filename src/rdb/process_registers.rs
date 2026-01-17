@@ -89,6 +89,10 @@ impl ProcRegisters {
         register: &Register,
         val :RegisterValue
     ) -> *mut u8 {
+        let val_size = val.size_of();
+        if val_size > register.size {
+            return std::ptr::null_mut();
+        }
         let user_bytes: *mut u8 = RegisterValue::as_bytes_mut( &mut self.data_);
         let reg_offset = register.offset;
         let reg_size = register.size;
@@ -135,6 +139,17 @@ pub enum RegisterValue {
 }
 
 impl RegisterValue {
+    pub fn size_of(&self) -> usize {
+        match self {
+            RegisterValue::U8(_) | RegisterValue::I8(_) => 1,
+            RegisterValue::U16(_) | RegisterValue::I16(_) => 2,
+            RegisterValue::U32(_) | RegisterValue::I32(_) | RegisterValue::Float(_) => 4,
+            RegisterValue::U64(_) | RegisterValue::I64(_) | RegisterValue::Double(_) => 8,
+            RegisterValue::LongDouble(_) => 10, // x87 80-bit
+            RegisterValue::Byte64(_) => 8,
+            RegisterValue::Byte128(_) => 16,
+        }
+    }
     pub fn as_bytes_mut<From>(obj: &mut From) -> *mut u8{
         obj as *mut From as *mut u8
     }
