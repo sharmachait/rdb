@@ -1,4 +1,5 @@
 use std::any::TypeId;
+use std::fmt;
 use crate::rdb::register_info::{Register, RegisterFormat, RegisterId, User};
 use crate::rdb::register_info::RegisterFormat::{DoubleFloat, LongDouble};
 
@@ -136,6 +137,58 @@ pub enum RegisterValue {
     LongDouble([u8;10]),
     Byte64([u8; 8]),
     Byte128([u8; 16]),
+}
+
+impl fmt::Display for RegisterValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RegisterValue::U8(v) => write!(f, "0x{:02x} ({:3})", v, v),
+            RegisterValue::U16(v) => write!(f, "0x{:04x} ({:5})", v, v),
+            RegisterValue::U32(v) => write!(f, "0x{:08x} ({:10})", v, v),
+            RegisterValue::U64(v) => write!(f, "0x{:016x} ({:20})", v, v),
+            RegisterValue::I8(v) => write!(f, "0x{:02x} ({:4})", *v as u8, v),
+            RegisterValue::I16(v) => write!(f, "0x{:04x} ({:6})", *v as u16, v),
+            RegisterValue::I32(v) => write!(f, "0x{:08x} ({:11})", *v as u32, v),
+            RegisterValue::I64(v) => write!(f, "0x{:016x} ({:20})", *v as u64, v),
+            RegisterValue::Float(v) => write!(f, "{:e} ({:.6})", v, v),
+            RegisterValue::Double(v) => write!(f, "{:e} ({:.15})", v, v),
+            RegisterValue::LongDouble(bytes) => {
+                // Display as hex bytes and converted f64 value
+                write!(f, "[")?;
+                for (i, byte) in bytes.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ",")?;
+                    }
+                    write!(f, "0x{:02x}", byte)?;
+                }
+                write!(f, "]")?;
+
+                // Also show approximate f64 value
+                let f64_val = Self::x87_to_f64(bytes);
+                write!(f, " ≈ {:.15}", f64_val)
+            }
+            RegisterValue::Byte64(bytes) => {
+                write!(f, "[")?;
+                for (i, byte) in bytes.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ",")?;
+                    }
+                    write!(f, "0x{:02x}", byte)?;
+                }
+                write!(f, "]")
+            }
+            RegisterValue::Byte128(bytes) => {
+                write!(f, "[")?;
+                for (i, byte) in bytes.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ",")?;
+                    }
+                    write!(f, "0x{:02x}", byte)?;
+                }
+                write!(f, "]")
+            }
+        }
+    }
 }
 
 impl RegisterValue {
