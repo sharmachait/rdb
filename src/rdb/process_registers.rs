@@ -1,5 +1,5 @@
 use crate::rdb::register_info::RegisterFormat::{DoubleFloat, LongDouble};
-use crate::rdb::register_info::{Register, RegisterFormat, RegisterId, User};
+use crate::rdb::register_info::{Register, RegisterFormat, RegisterId, RegisterType, User};
 use core::{f64, fmt};
 use std::any::TypeId;
 
@@ -80,6 +80,53 @@ impl ProcRegisters {
         if val_size > register.size {
             return std::ptr::null_mut();
         }
+
+        // Special handling for FPR registers (st_space)
+        if register.register_type == RegisterType::Fpr
+            && register.register_format == RegisterFormat::LongDouble
+        {
+            let x87_bytes = match val {
+                RegisterValue::LongDouble(bytes) => bytes,
+                _ => return std::ptr::null_mut(),
+            };
+
+            // Calculate which ST register (0-7)
+            let st_index = match register.id {
+                RegisterId::St0 => 0,
+                RegisterId::St1 => 1,
+                RegisterId::St2 => 2,
+                RegisterId::St3 => 3,
+                RegisterId::St4 => 4,
+                RegisterId::St5 => 5,
+                RegisterId::St6 => 6,
+                RegisterId::St7 => 7,
+                _ => return std::ptr::null_mut(),
+            };
+
+            // Each ST register = 4 u32s (16 bytes) in st_space, but we only use first 10 bytes
+            let base_index = st_index * 4;
+
+            // Convert the 10 bytes to u32 values
+            for i in 0..2 {
+                let u32_bytes = [
+                    x87_bytes[i * 4],
+                    x87_bytes[i * 4 + 1],
+                    x87_bytes[i * 4 + 2],
+                    x87_bytes[i * 4 + 3],
+                ];
+                self.data_.i387.st_space[base_index + i] = u32::from_le_bytes(u32_bytes);
+            }
+            // Last 2 bytes go into third u32 (lower 2 bytes)
+            let u32_bytes = [x87_bytes[8], x87_bytes[9], 0, 0];
+            self.data_.i387.st_space[base_index + 2] = u32::from_le_bytes(u32_bytes);
+
+            // Zero out the padding
+            self.data_.i387.st_space[base_index + 3] = 0;
+
+            return &mut self.data_ as *mut _ as *mut u8;
+        }
+
+        // Original code for non-FPR registers
         let user_bytes: *mut u8 = RegisterValue::as_bytes_mut(&mut self.data_);
         let reg_offset = register.offset;
         let reg_size = register.size;
@@ -95,9 +142,10 @@ impl ProcRegisters {
             RegisterValue::I64(v) => RegisterValue::widen(register, v),
             RegisterValue::Float(v) => RegisterValue::widen(register, v),
             RegisterValue::Double(v) => RegisterValue::widen(register, v),
-            RegisterValue::LongDouble(v) => RegisterValue::widen(register, v),
             RegisterValue::Byte64(v) => RegisterValue::widen(register, v),
             RegisterValue::Byte128(v) => RegisterValue::widen(register, v),
+            RegisterValue::LongDouble(v) => RegisterValue::widen(register, v),
+            _ => return std::ptr::null_mut(),
         };
 
         std::ptr::copy_nonoverlapping(val_bytes.as_ptr(), user_bytes.add(reg_offset), reg_size);
