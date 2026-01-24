@@ -405,8 +405,8 @@ impl Register {
                 .ok_or("Invalid format"),
             RegisterFormat::LongDouble => {
                 // Parse as f64, then convert to x87 bytes
-                str_to_float::<f64>(val_str)
-                    .map(|f| RegisterValue::LongDouble(RegisterValue::f64_to_x87(f)))
+                str_to_x87(val_str)
+                    .map(RegisterValue::LongDouble)
                     .ok_or("Invalid format")
             }
             RegisterFormat::Vector => match self.size {
@@ -420,6 +420,41 @@ impl Register {
             },
         }
     }
+}
+
+fn str_to_x87(s: &str) -> Option<[u8; 10]> {
+    let s = s.trim();
+
+    // If hex format, parse exactly
+    if s.starts_with("0x") || s.starts_with("0X") {
+        return parse_x87_hex(s);
+    }
+
+    // Otherwise parse as f64 and convert (precision loss acceptable)
+    str_to_float::<f64>(s).map(RegisterValue::f64_to_x87)
+}
+
+fn parse_x87_hex(s: &str) -> Option<[u8; 10]> {
+    let hex_str = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))?;
+
+    // Remove any spaces or underscores for readability
+    let cleaned: String = hex_str
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '_')
+        .collect();
+
+    // Expect exactly 20 hex characters (10 bytes)
+    if cleaned.len() != 20 {
+        return None;
+    }
+
+    let mut result = [0u8; 10];
+    for i in 0..10 {
+        let byte_str = &cleaned[i * 2..(i * 2 + 2)];
+        result[i] = u8::from_str_radix(byte_str, 16).ok()?;
+    }
+
+    Some(result)
 }
 
 fn str_to_vector<const N: usize>(s: &str) -> Option<[u8; N]> {

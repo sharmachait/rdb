@@ -65,7 +65,6 @@ impl ProcRegisters {
             let u32_val = self.data_.i387.st_space[base_index + 2];
             let bytes = u32_val.to_le_bytes();
             x87_bytes[8..10].copy_from_slice(&bytes[0..2]);
-
             Ok(RegisterValue::LongDouble(x87_bytes))
         } else if register.register_format == RegisterFormat::Vector && register.size == 8 {
             let val = RegisterValue::from_bytes::<[u8; 8]>(bytes.add(offset));
@@ -234,10 +233,10 @@ impl RegisterValue {
         }
     }
     pub fn x87_to_f64(bytes: &[u8; 10]) -> f64 {
-        let mantissa = u64::from_le_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        let sign_and_exp = u16::from_be_bytes([bytes[0], bytes[1]]);
+        let mantissa = u64::from_be_bytes([
+            bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9],
         ]);
-        let sign_and_exp = u16::from_le_bytes([bytes[8], bytes[9]]);
         let sign = (sign_and_exp >> 15) & 1;
         let x87_exp = (sign_and_exp & 0x7FFF) as i32;
         if mantissa == 0 && x87_exp == 0 {
@@ -247,7 +246,6 @@ impl RegisterValue {
             return 0.0;
         }
         let f64_exp = x87_exp - 16383 + 1023;
-
         if f64_exp <= 0 {
             if sign == 1 {
                 return -0.0;
