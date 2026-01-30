@@ -8,6 +8,6 @@ pub unsafe fn attach(args: Vec<String>) -> Result<Process, String> {
     } else {
         //spin up a new process and attach to it
         let program_path = args[1].clone();
-        Process::launch(&program_path)
+        Process::launch(&program_path, None)
     }
 }

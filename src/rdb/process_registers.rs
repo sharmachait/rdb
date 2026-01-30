@@ -1,5 +1,5 @@
 use crate::rdb::register_info::RegisterFormat::{DoubleFloat, LongDouble};
-use crate::rdb::register_info::{Register, RegisterFormat, RegisterId, User};
+use crate::rdb::register_info::{Register, RegisterFormat, RegisterId, RegisterType, User};
 use core::{f64, fmt};
 use std::any::TypeId;
 
@@ -80,6 +80,49 @@ impl ProcRegisters {
         if val_size > register.size {
             return std::ptr::null_mut();
         }
+
+        if register.register_type == RegisterType::Fpr
+            && register.register_format == RegisterFormat::LongDouble
+        {
+            let x87_bytes = match val {
+                RegisterValue::LongDouble(bytes) => bytes,
+                _ => return std::ptr::null_mut(),
+            };
+
+            let st_index = match register.id {
+                RegisterId::St0 => 0,
+                RegisterId::St1 => 1,
+                RegisterId::St2 => 2,
+                RegisterId::St3 => 3,
+                RegisterId::St4 => 4,
+                RegisterId::St5 => 5,
+                RegisterId::St6 => 6,
+                RegisterId::St7 => 7,
+                _ => return std::ptr::null_mut(),
+            };
+
+            let base_index = st_index * 4;
+
+            for i in 0..2 {
+                let u32_bytes = [
+                    x87_bytes[i * 4],
+                    x87_bytes[i * 4 + 1],
+                    x87_bytes[i * 4 + 2],
+                    x87_bytes[i * 4 + 3],
+                ];
+                let packed_u32 = u32::from_le_bytes(u32_bytes);
+                self.data_.i387.st_space[base_index + i] = packed_u32;
+            }
+
+            let u32_btyes = [x87_bytes[8], x87_bytes[9], 0, 0];
+            let packed_u32 = u32::from_le_bytes(u32_btyes);
+
+            self.data_.i387.st_space[base_index + 2] = packed_u32;
+            self.data_.i387.st_space[base_index + 3] = 0;
+
+            return &mut self.data_ as *mut _ as *mut u8;
+        }
+
         let user_bytes: *mut u8 = RegisterValue::as_bytes_mut(&mut self.data_);
         let reg_offset = register.offset;
         let reg_size = register.size;

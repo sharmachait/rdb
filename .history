@@ -10,3 +10,16 @@ continue
 c
 cont
 continue
+register write rsi 0xcafecafe
+register read rsi
+register write mm0 [0xba,0x5e,0xba,0x11]
+register read mm0
+register write xmm0 [0xba,0x5e,0xba,0x11]
+register read xmm0
+register write fsw 0xfff
+register read fsw
+register write st0 3.14159265358979323846264338327950288419716939937510
+register read st0
+ster write st0 0x3fff8000000000000000
+register write st0 0x3fff8000000000000000
+register read st0

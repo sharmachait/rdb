@@ -4,12 +4,13 @@ use crate::rdb::register_info::{
 };
 use nix::errno::Errno;
 use nix::fcntl::{fcntl, FcntlArg, FdFlag};
-use nix::libc::{ptrace, PTRACE_PEEKUSER, PTRACE_POKEUSER, PTRACE_SETFPREGS};
+use nix::libc::{ptrace, PTRACE_PEEKUSER};
 use nix::sys::ptrace;
 use nix::sys::signal::{kill, Signal};
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{close, execvp, fork, pipe, read, write, ForkResult, Pid};
 use std::ffi::CString;
+use std::os::fd::RawFd;
 use std::process;
 
 pub struct Process {
@@ -85,7 +86,10 @@ impl Process {
 
         Ok(process)
     }
-    pub fn launch(program_path: &str) -> Result<Process, String> {
+    pub fn launch(
+        program_path: &str,
+        stdout_replacement: Option<RawFd>,
+    ) -> Result<Process, String> {
         let (read_fd, write_fd) = pipe().map_err(|e| format!("pipe failed: {}", e))?;
 
         fcntl(&read_fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).ok();
@@ -123,6 +127,12 @@ impl Process {
                 Ok(ForkResult::Child) => {
                     close(read_fd).ok(); // we only want to write from the child
 
+                    if let Some(fd) = stdout_replacement {
+                        if libc::dup2(fd, libc::STDOUT_FILENO) < 0 {
+                            panic!("stdout_replacement failed");
+                        }
+                    }
+
                     let traceme_res = ptrace::traceme();
                     if let Err(e) = traceme_res {
                         let _ = write(
@@ -157,7 +167,7 @@ impl Process {
             }
         }
     }
-    pub fn dispatch_command(&mut self, command: String) {
+    pub unsafe fn dispatch_command(&mut self, command: String) {
         let args: Vec<&str> = command.split_whitespace().collect();
         let command = args[0];
         if "continue".starts_with(command) {
@@ -165,10 +175,116 @@ impl Process {
             if let Err(e) = self.wait_on_signal() {
                 process::exit(1);
             } // breakpoint// process stops again
+        } else if "help".starts_with(command) {
+            self.handle_help(args);
+        } else if "register".starts_with(command) {
+            self.handle_register(args);
         } else {
             eprintln!("unknown command: {}", command)
         }
     }
+    fn handle_help(&self, args: Vec<&str>) {
+        println!("=================================================================================================");
+        if args.len() == 1 {
+            println!("Available Commands: ");
+            println!("  continue - Resume the Debuggee");
+            println!("  register - Commands for reading and writing to registers");
+        } else {
+            let command = args[1];
+            if "register".starts_with(command) {
+                println!("Available Sub-Commands: ");
+                println!("  read");
+                println!("  read <register>");
+                println!("  read all");
+                println!("  write <register> <value>");
+            } else {
+                println!("Unsupported command: {}", command);
+            }
+        }
+    }
+
+    unsafe fn handle_register(&mut self, args: Vec<&str>) {
+        if args.len() < 2 {
+            self.handle_help(args);
+            return;
+        }
+
+        let subcommand = args[1]; // read / write
+        if "read".starts_with(subcommand) {
+            self.handle_register_read(args);
+        } else if "write".starts_with(subcommand) {
+            self.handle_register_write(args);
+        } else {
+            let command = "register";
+            println!("Unsupported command: {} {}", command, subcommand);
+        }
+    }
+
+    unsafe fn handle_register_write(&mut self, args: Vec<&str>) {
+        if args.len() != 4 {
+            println!("Unsupported command: {} {}", args[0], args[1]);
+            self.handle_help(args);
+            return;
+        }
+
+        let register = Register::by_name(args[2]);
+        if let None = register {
+            println!("Invalid Register namer: {}", args[2]);
+            return;
+        }
+
+        let register = register.unwrap();
+        let value = register.parse_value(args[3]);
+        if let Err(e) = value {
+            println!("{}", e);
+            return;
+        }
+        let value = value.unwrap();
+
+        let res = self.write_to_user_by_register_id(register.id, value);
+
+        if let Err(e) = res {
+            eprintln!("{}", e);
+        }
+    }
+
+    unsafe fn handle_register_read(&mut self, args: Vec<&str>) {
+        if args.len() == 2 || (args.len() == 3 && args[2] == "all") {
+            let res = self.read_all_registers();
+            if let Err(e) = res {
+                eprintln!("{}", e);
+                return;
+            }
+            self.proc_registers.data_.print_user();
+        } else if args.len() == 3 {
+            let register = Register::by_name(args[2]);
+            if let None = register {
+                println!("Invalid Register namer: {}", args[2]);
+                return;
+            }
+            let register = register.unwrap();
+            let res = self.read_all_registers();
+            if let Err(e) = res {
+                eprintln!("{}", e);
+                return;
+            }
+
+            let val = self.proc_registers.get_register_val_by_id(register.id);
+
+            if let Err(e) = val {
+                println!("{}", e);
+                return;
+            }
+
+            let val = val.unwrap();
+            println!("{}:           {}", args[2], val);
+        } else {
+            println!("Unsupported command: {} {}", args[0], args[1]);
+            self.handle_help(args);
+            return;
+        }
+    }
+
     fn resume(&mut self) {
         if let Err(e) = ptrace::cont(self.pid(), None) {
             eprintln!("Couldn't Continue: {}", e);
@@ -181,10 +297,10 @@ impl Process {
         match wait_res {
             Ok(status) => {
                 self.process_state = ProcessState::Stopped;
-                self.read_all_registers();
-                self.proc_registers.data_.print_user();
-                self.read_all_registers();
-                self.proc_registers.data_.print_user();
+                let res = self.read_all_registers();
+                if let Err(e) = res {
+                    eprintln!("{}", e);
+                }
                 Ok(status)
             }
             Err(e) => {
@@ -194,31 +310,36 @@ impl Process {
             }
         }
     }
-    pub unsafe fn write_to_user_by_register_id(&mut self, id: RegisterId, val: RegisterValue) {
+    pub unsafe fn write_to_user_by_register_id(
+        &mut self,
+        id: RegisterId,
+        val: RegisterValue,
+    ) -> Result<&str, &str> {
         let register = Register::by_id(id);
         let user_bytes = self.proc_registers.write_register(register, val);
+        if user_bytes == std::ptr::null_mut() {
+            return Err("Couldnt write register.");
+        }
         if register.register_type == RegisterType::Fpr {
             self.write_fprs()
         } else {
             let offset = register.offset;
-
             let offset = offset & !0b111;
-
             let bytes = RegisterValue::from_bytes::<u64>(user_bytes.add(offset));
-            println!("----------------------------------------writing to user---------------------------------------------------------");
-            self.write_user(offset, bytes);
+            self.write_user(offset, bytes)
         }
     }
 
-    fn write_user(&self, offset: usize, data: u64) {
+    fn write_user(&self, offset: usize, data: u64) -> Result<&str, &str> {
         use nix::libc::{ptrace, PTRACE_POKEUSER};
         let result = unsafe { ptrace(PTRACE_POKEUSER, self.pid.as_raw(), offset, data) };
         if result < 0 {
-            panic!("Couldnt write to user");
+            return Err("Couldnt write to user");
         }
+        return Ok("Wrote to user");
     }
 
-    fn write_fprs(&self) {
+    fn write_fprs(&self) -> Result<&str, &str> {
         use nix::libc::{ptrace, PTRACE_SETFPREGS};
         let fprs = &self.proc_registers.data_.i387;
         let result = unsafe {
@@ -226,15 +347,16 @@ impl Process {
                 PTRACE_SETFPREGS,
                 self.pid.as_raw(),
                 std::ptr::null_mut::<std::ffi::c_void>(),
-                &fprs as *const _ as *const std::ffi::c_void,
+                fprs as *const _ as *const std::ffi::c_void,
             )
         };
         if result < 0 {
-            panic!("Couldnt write to Floating point registers");
+            return Err("Couldnt write to Floating point registers");
         }
+        return Ok("Register updated");
     }
 
-    fn write_gprs(&self) {
+    fn write_gprs(&self) -> Result<&str, &str> {
         use nix::libc::{ptrace, PTRACE_SETREGS};
         let gprs = &self.proc_registers.data_.regs;
         let result = unsafe {
@@ -242,12 +364,13 @@ impl Process {
                 PTRACE_SETREGS,
                 self.pid.as_raw(),
                 std::ptr::null_mut::<std::ffi::c_void>(),
-                &gprs as *const _ as *const std::ffi::c_void,
+                gprs as *const _ as *const std::ffi::c_void,
             )
         };
         if result < 0 {
-            panic!("Couldnt write to General purpose registers");
+            return Err("Couldnt write to General purpose registers");
         }
+        return Ok("Register Updated");
     }
     pub fn read_all_registers(&mut self) -> Result<&str, &str> {
         use nix::libc::{ptrace as libc_ptrace, PTRACE_GETFPREGS};

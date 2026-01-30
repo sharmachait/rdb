@@ -1,31 +1,142 @@
+use crate::rdb::process_registers::RegisterValue;
 use std::mem::offset_of;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum RegisterId { // 125 registers in total
-    Rax, Rdx, Rcx, Rbx, Rsi, Rdi, Rbp, Rsp,
-    R8, R9, R10, R11, R12, R13, R14, R15,
-    Rip, Eflags, Cs, Fs, Gs, Ss, Ds, Es, OrigRax,
+pub enum RegisterId {
+    // 125 registers in total
+    Rax,
+    Rdx,
+    Rcx,
+    Rbx,
+    Rsi,
+    Rdi,
+    Rbp,
+    Rsp,
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    R13,
+    R14,
+    R15,
+    Rip,
+    Eflags,
+    Cs,
+    Fs,
+    Gs,
+    Ss,
+    Ds,
+    Es,
+    OrigRax,
 
-    Eax, Edx, Ecx, Ebx, Esi, Edi, Ebp, Esp,
-    R8d, R9d, R10d, R11d, R12d, R13d, R14d, R15d,
+    Eax,
+    Edx,
+    Ecx,
+    Ebx,
+    Esi,
+    Edi,
+    Ebp,
+    Esp,
+    R8d,
+    R9d,
+    R10d,
+    R11d,
+    R12d,
+    R13d,
+    R14d,
+    R15d,
 
-    Ax, Dx, Cx, Bx, Si, Di, Bp, Sp,
-    R8w, R9w, R10w, R11w, R12w, R13w, R14w, R15w,
+    Ax,
+    Dx,
+    Cx,
+    Bx,
+    Si,
+    Di,
+    Bp,
+    Sp,
+    R8w,
+    R9w,
+    R10w,
+    R11w,
+    R12w,
+    R13w,
+    R14w,
+    R15w,
 
-    Ah, Dh, Ch, Bh,
-    Al, Dl, Cl, Bl, Sil, Dil, Bpl, Spl,
-    R8b, R9b, R10b, R11b, R12b, R13b, R14b, R15b,
+    Ah,
+    Dh,
+    Ch,
+    Bh,
+    Al,
+    Dl,
+    Cl,
+    Bl,
+    Sil,
+    Dil,
+    Bpl,
+    Spl,
+    R8b,
+    R9b,
+    R10b,
+    R11b,
+    R12b,
+    R13b,
+    R14b,
+    R15b,
 
-    Fcw, Fsw, Ftw, Fop, Frip, Frdp, Mxcsr, Mxcsrmask,
+    Fcw,
+    Fsw,
+    Ftw,
+    Fop,
+    Frip,
+    Frdp,
+    Mxcsr,
+    Mxcsrmask,
 
-    St0, St1, St2, St3, St4, St5, St6, St7,
+    St0,
+    St1,
+    St2,
+    St3,
+    St4,
+    St5,
+    St6,
+    St7,
 
-    Mm0, Mm1, Mm2, Mm3, Mm4, Mm5, Mm6, Mm7,
+    Mm0,
+    Mm1,
+    Mm2,
+    Mm3,
+    Mm4,
+    Mm5,
+    Mm6,
+    Mm7,
 
-    Xmm0, Xmm1, Xmm2, Xmm3, Xmm4, Xmm5, Xmm6, Xmm7,
-    Xmm8, Xmm9, Xmm10, Xmm11, Xmm12, Xmm13, Xmm14, Xmm15,
+    Xmm0,
+    Xmm1,
+    Xmm2,
+    Xmm3,
+    Xmm4,
+    Xmm5,
+    Xmm6,
+    Xmm7,
+    Xmm8,
+    Xmm9,
+    Xmm10,
+    Xmm11,
+    Xmm12,
+    Xmm13,
+    Xmm14,
+    Xmm15,
 
-    Dr0, Dr1, Dr2, Dr3, Dr4, Dr5, Dr6, Dr7,
+    Dr0,
+    Dr1,
+    Dr2,
+    Dr3,
+    Dr4,
+    Dr5,
+    Dr6,
+    Dr7,
 }
 
 #[repr(C)]
@@ -74,7 +185,7 @@ impl User {
             std::mem::zeroed()
         }
     }
-    pub fn print_user(&self){
+    pub fn print_user(&self) {
         println!("========== General Purpose Registers ==========");
         println!("rax:      0x{:016x}  ({:20})", self.regs.rax, self.regs.rax);
         println!("rbx:      0x{:016x}  ({:20})", self.regs.rbx, self.regs.rbx);
@@ -93,8 +204,14 @@ impl User {
         println!("r14:      0x{:016x}  ({:20})", self.regs.r14, self.regs.r14);
         println!("r15:      0x{:016x}  ({:20})", self.regs.r15, self.regs.r15);
         println!("rip:      0x{:016x}  ({:20})", self.regs.rip, self.regs.rip);
-        println!("eflags:   0x{:016x}  ({:20})", self.regs.eflags, self.regs.eflags);
-        println!("orig_rax: 0x{:016x}  ({:20})", self.regs.orig_rax, self.regs.orig_rax);
+        println!(
+            "eflags:   0x{:016x}  ({:20})",
+            self.regs.eflags, self.regs.eflags
+        );
+        println!(
+            "orig_rax: 0x{:016x}  ({:20})",
+            self.regs.orig_rax, self.regs.orig_rax
+        );
 
         println!("\n========== Segment Registers ==========");
         println!("cs:       0x{:016x}", self.regs.cs);
@@ -197,14 +314,14 @@ pub struct UserRegsStruct {
 
 #[repr(C)]
 pub struct UserFpRegsStruct {
-    pub cwd: u16,           // Control word
-    pub swd: u16,           // Status word
-    pub ftw: u16,           // Tag word
-    pub fop: u16,           // Last instruction opcode
-    pub rip: u64,           // Instruction pointer
-    pub rdp: u64,           // Data pointer
-    pub mxcsr: u32,         // MXCSR register
-    pub mxcr_mask: u32,     // MXCSR mask
+    pub cwd: u16,       // Control word
+    pub swd: u16,       // Status word
+    pub ftw: u16,       // Tag word
+    pub fop: u16,       // Last instruction opcode
+    pub rip: u64,       // Instruction pointer
+    pub rdp: u64,       // Data pointer
+    pub mxcsr: u32,     // MXCSR register
+    pub mxcr_mask: u32, // MXCSR mask
     /// x87 FPU / MMX registers (8 registers × 16 bytes each = 128 bytes)
     ///
     /// Each x87 register (ST0-ST7) is 80 bits (10 bytes) but stored in 16 bytes.
@@ -214,11 +331,11 @@ pub struct UserFpRegsStruct {
     // 8 FP registers, 16 bytes each (128 bytes total)
     /// SSE registers (16 XMM registers × 16 bytes each = 256 bytes)
     /// Note: [u32; 64] = 64 × 4 = 256 bytes
-    pub xmm_space: [u32; 64],  // 16 XMM registers, 16 bytes each (256 bytes total)
+    pub xmm_space: [u32; 64], // 16 XMM registers, 16 bytes each (256 bytes total)
     pub padding: [u32; 24],
 }
 
-const fn gpr_offset(reg_offset: usize) -> usize{
+const fn gpr_offset(reg_offset: usize) -> usize {
     offset_of!(User, regs) + reg_offset
 }
 
@@ -235,7 +352,7 @@ pub enum RegisterType {
     Gpr,
     SubGpr,
     Fpr,
-    Dr
+    Dr,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -243,7 +360,7 @@ pub enum RegisterFormat {
     Uint,
     DoubleFloat,
     LongDouble,
-    Vector
+    Vector,
 }
 
 pub struct Register {
@@ -253,7 +370,7 @@ pub struct Register {
     pub offset: usize,
     pub register_type: RegisterType,
     pub register_format: RegisterFormat,
-    pub dwarf_id: i32
+    pub dwarf_id: i32,
 }
 
 impl Register {
@@ -266,6 +383,117 @@ impl Register {
     pub fn by_id(id: RegisterId) -> &'static Self {
         &REGISTERS[id as usize]
     }
+    pub fn parse_value(&self, val_str: &str) -> Result<RegisterValue, &str> {
+        match self.register_format {
+            RegisterFormat::Uint => match self.size {
+                1 => str_to_int::<u8>(val_str, 16)
+                    .map(RegisterValue::U8)
+                    .ok_or("Invalid format"),
+                2 => str_to_int::<u16>(val_str, 16)
+                    .map(RegisterValue::U16)
+                    .ok_or("Invalid format"),
+                4 => str_to_int::<u32>(val_str, 16)
+                    .map(RegisterValue::U32)
+                    .ok_or("Invalid format"),
+                8 => str_to_int::<u64>(val_str, 16)
+                    .map(RegisterValue::U64)
+                    .ok_or("Invalid format"),
+                _ => Err("Invalid format"),
+            },
+            RegisterFormat::DoubleFloat => val_str
+                .parse::<f64>()
+                .ok()
+                .map(RegisterValue::Double)
+                .ok_or("Invalid format"),
+            RegisterFormat::LongDouble => str_to_x87(val_str)
+                .map(RegisterValue::LongDouble)
+                .ok_or("Invalid format"),
+            RegisterFormat::Vector => match self.size {
+                8 => str_to_vector::<8>(val_str) // [0xba,0x5e,0xba,0x11,0x11,0x11,0x11,0x11]
+                    .map(RegisterValue::Byte64)
+                    .ok_or("Invalid format"),
+                16 => str_to_vector::<16>(val_str)
+                    .map(RegisterValue::Byte128)
+                    .ok_or("Invalid format"),
+                _ => Err("Invalid format"),
+            },
+        }
+    }
+}
+
+fn str_to_x87(s: &str) -> Option<[u8; 10]> {
+    // 0x3fff8000000000000000 ==> 1.0
+    // 3.14159265358979323846264338327950288419716939937510
+    if s.starts_with("0x") {
+        return parse_x87_hex(s);
+    }
+
+    Some(RegisterValue::f64_to_x87(
+        s.parse::<f64>().expect("Invalid format"),
+    ))
+}
+
+fn parse_x87_hex(s: &str) -> Option<[u8; 10]> {
+    let hex_str = s.strip_prefix("0x")?;
+
+    if hex_str.len() != 20 {
+        return None;
+    }
+
+    let mut bytes = [0u8; 10];
+
+    for i in 0..10 {
+        // i = 0, 1, 2
+        let st_idx = i * 2; // 0, 2, 4
+        let upto = st_idx + 2; // 2, 4, 6
+        let byte_str = &hex_str[st_idx..upto];
+        bytes[i] = u8::from_str_radix(byte_str, 16).ok()?;
+    }
+
+    bytes.reverse();
+    Some(bytes)
+}
+
+fn str_to_vector<const N: usize>(s: &str) -> Option<[u8; N]> {
+    let mut bytes = [0u8; N];
+    let mut chars = s.chars().peekable();
+
+    if chars.next()? != '[' {
+        return None;
+    }
+
+    for i in 0..N {
+        let hex_str: String = chars.by_ref().take(4).collect(); //0x12
+        bytes[i] = str_to_int::<u8>(&hex_str, 16)?;
+
+        match chars.peek()? {
+            ']' => {
+                chars.next();
+                break;
+            }
+            ',' if i < N - 1 => {
+                chars.next();
+            }
+            _ => return None,
+        }
+    }
+    if chars.next().is_some() {
+        return None;
+    }
+    Some(bytes)
+}
+
+fn str_to_int<T>(s: &str, base: u32) -> Option<T>
+where
+    T: num_traits::Num,
+{
+    let s = if base == 16 && s.starts_with("0x") {
+        &s[2..]
+    } else {
+        s
+    };
+
+    T::from_str_radix(s, base).ok()
 }
 
 pub const REGISTERS: &[Register] = &[
@@ -495,7 +723,6 @@ pub const REGISTERS: &[Register] = &[
         register_type: RegisterType::Gpr,
         register_format: RegisterFormat::Uint,
     },
-
     // ========== 32-bit subregisters ==========
     Register {
         id: RegisterId::Eax,
@@ -641,7 +868,6 @@ pub const REGISTERS: &[Register] = &[
         register_type: RegisterType::SubGpr,
         register_format: RegisterFormat::Uint,
     },
-
     // ========== 16-bit subregisters ==========
     Register {
         id: RegisterId::Ax,
@@ -787,7 +1013,6 @@ pub const REGISTERS: &[Register] = &[
         register_type: RegisterType::SubGpr,
         register_format: RegisterFormat::Uint,
     },
-
     // ========== 8-bit high subregisters ==========
     Register {
         id: RegisterId::Ah,
@@ -825,7 +1050,6 @@ pub const REGISTERS: &[Register] = &[
         register_type: RegisterType::SubGpr,
         register_format: RegisterFormat::Uint,
     },
-
     // ========== 8-bit low subregisters ==========
     Register {
         id: RegisterId::Al,
@@ -971,7 +1195,6 @@ pub const REGISTERS: &[Register] = &[
         register_type: RegisterType::SubGpr,
         register_format: RegisterFormat::Uint,
     },
-
     // ========== Floating Point Control Registers ==========
     Register {
         id: RegisterId::Fcw,
@@ -1045,7 +1268,6 @@ pub const REGISTERS: &[Register] = &[
         register_type: RegisterType::Fpr,
         register_format: RegisterFormat::Uint,
     },
-
     // ========== ST (FPU Stack) Registers ==========
     // ST registers are 10 bytes in hardware but stored as 16 bytes
     Register {
@@ -1120,7 +1342,6 @@ pub const REGISTERS: &[Register] = &[
         register_type: RegisterType::Fpr,
         register_format: RegisterFormat::LongDouble,
     },
-
     // ========== MM (MMX) Registers ==========
     // MM registers are 8 bytes but stored with 16-byte alignment
     Register {
@@ -1195,7 +1416,6 @@ pub const REGISTERS: &[Register] = &[
         register_type: RegisterType::Fpr,
         register_format: RegisterFormat::Vector,
     },
-
     // ========== XMM (SSE) Registers ==========
     Register {
         id: RegisterId::Xmm0,
@@ -1341,7 +1561,6 @@ pub const REGISTERS: &[Register] = &[
         register_type: RegisterType::Fpr,
         register_format: RegisterFormat::Vector,
     },
-
     // ========== Debug Registers ==========
     Register {
         id: RegisterId::Dr0,
