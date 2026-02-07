@@ -68,12 +68,17 @@ fn debug(mut process: Process) {
                 println!("^C");
                 continue;
             }
-            Err(ReadlineError::Eof) => {
+            Err(ReadlineError::Eof) => unsafe {
                 // CTRL + d
                 println!("Exiting Debugger - CTRL + D");
+                let ip = process.get_instruction_pointer_va();
+                if let Ok(va) = ip {
+                    println!("============================================= va =============================");
+                    println!("{}", va.addr());
+                }
                 drop(process);
                 break;
-            }
+            },
             Err(e) => {
                 eprintln!("Error: {:?}", e);
                 break;

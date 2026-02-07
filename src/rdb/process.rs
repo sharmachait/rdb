@@ -2,6 +2,7 @@ use crate::rdb::process_registers::{ProcRegisters, RegisterValue};
 use crate::rdb::register_info::{
     Register, RegisterId, RegisterType, User, UserFpRegsStruct, UserRegsStruct,
 };
+use crate::rdb::virtual_address::VirtAddr;
 use nix::errno::Errno;
 use nix::fcntl::{fcntl, FcntlArg, FdFlag};
 use nix::libc::{ptrace, PTRACE_PEEKUSER};
@@ -446,5 +447,17 @@ impl Process {
             self.proc_registers.data_.u_debugreg[i] = data as u64;
         }
         Ok("Read all registers")
+    }
+
+    pub unsafe fn get_instruction_pointer_va(&mut self) -> Result<VirtAddr, &str> {
+        let rip_val = self
+            .proc_registers
+            .get_register_val_by_id(RegisterId::Rip)
+            .unwrap();
+
+        match rip_val {
+            RegisterValue::U64(val) => Ok(VirtAddr::with_addr(val)),
+            _ => Err("Invalid Register value returned"),
+        }
     }
 }
