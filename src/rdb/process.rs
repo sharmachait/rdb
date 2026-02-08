@@ -1,3 +1,4 @@
+use crate::rdb::breakpoint_va::BreakpointVA;
 use crate::rdb::process_registers::{ProcRegisters, RegisterValue};
 use crate::rdb::register_info::{
     Register, RegisterId, RegisterType, User, UserFpRegsStruct, UserRegsStruct,
@@ -17,6 +18,7 @@ use std::process;
 pub struct Process {
     pid: Pid,
     terminate_on_end: bool,
+    pub breakpoints: Vec<BreakpointVA>,
     pub process_state: ProcessState,
     pub proc_registers: ProcRegisters,
 }
@@ -61,6 +63,7 @@ impl Process {
             terminate_on_end,
             process_state,
             proc_registers,
+            breakpoints: Vec::new(),
         }
     }
     pub fn pid(&self) -> Pid {
@@ -459,5 +462,10 @@ impl Process {
             RegisterValue::U64(val) => Ok(VirtAddr::with_addr(val)),
             _ => Err("Invalid Register value returned"),
         }
+    }
+    pub fn add_breakpoint_at(&mut self, addr: VirtAddr) -> &BreakpointVA {
+        let bp = BreakpointVA::create_for_process_at(self, addr);
+        self.breakpoints.push(bp);
+        self.breakpoints.last().unwrap()
     }
 }
