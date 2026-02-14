@@ -8,16 +8,16 @@ pub struct BreakpointVA {
 }
 
 impl BreakpointVA {
-    pub fn get_id(&self) -> usize {
+    pub fn id(&self) -> usize {
         self.id
     }
-    pub fn create_for_process_at(process: &Process, addr: VirtAddr) -> Self {
+    pub fn create_for_process_at(process: &mut Process, addr: VirtAddr) -> Self {
+        process.breakpoint_id = process.breakpoint_id + 1;
         Self {
             virtual_address: addr,
             is_enabled_: false,
             instruction_replaced: 0,
-            id: process.breakpoints.len() + 1, // we will hardly ever remove a breakpoint, mostly
-                                               // will disable it
+            id: process.breakpoint_id,
         }
     }
     pub fn enable(&mut self) {

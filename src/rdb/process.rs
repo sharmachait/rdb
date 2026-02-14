@@ -16,6 +16,7 @@ use std::os::fd::RawFd;
 use std::process;
 
 pub struct Process {
+    pub breakpoint_id: usize,
     pid: Pid,
     terminate_on_end: bool,
     pub breakpoints: Vec<BreakpointVA>,
@@ -59,6 +60,7 @@ impl Process {
     pub fn new(pid: Pid, terminate_on_end: bool, process_state: ProcessState, data: User) -> Self {
         let proc_registers = ProcRegisters::new(data);
         Self {
+            breakpoint_id: 0,
             pid,
             terminate_on_end,
             process_state,
