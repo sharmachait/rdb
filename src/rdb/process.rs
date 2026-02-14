@@ -1,4 +1,4 @@
-use crate::rdb::breakpoint_va::BreakpointVA;
+use crate::rdb::stop_points::breakpoint_va::BreakpointVA;
 use crate::rdb::process_registers::{ProcRegisters, RegisterValue};
 use crate::rdb::register_info::{
     Register, RegisterId, RegisterType, User, UserFpRegsStruct, UserRegsStruct,
