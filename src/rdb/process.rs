@@ -1,8 +1,9 @@
-use crate::rdb::stop_points::breakpoint_va::BreakpointVA;
 use crate::rdb::process_registers::{ProcRegisters, RegisterValue};
 use crate::rdb::register_info::{
     Register, RegisterId, RegisterType, User, UserFpRegsStruct, UserRegsStruct,
 };
+use crate::rdb::stop_points::breakpoint_va::BreakpointVA;
+use crate::rdb::stop_points::stoppoint_collection::StoppointCollection;
 use crate::rdb::virtual_address::VirtAddr;
 use nix::errno::Errno;
 use nix::fcntl::{fcntl, FcntlArg, FdFlag};
@@ -19,7 +20,7 @@ pub struct Process {
     pub breakpoint_id: usize,
     pid: Pid,
     terminate_on_end: bool,
-    pub breakpoints: Vec<BreakpointVA>,
+    pub stop_points: StoppointCollection<BreakpointVA>,
     pub process_state: ProcessState,
     pub proc_registers: ProcRegisters,
 }
@@ -65,7 +66,7 @@ impl Process {
             terminate_on_end,
             process_state,
             proc_registers,
-            breakpoints: Vec::new(),
+            stop_points: StoppointCollection::default(),
         }
     }
     pub fn pid(&self) -> Pid {
@@ -465,9 +466,14 @@ impl Process {
             _ => Err("Invalid Register value returned"),
         }
     }
-    pub fn add_breakpoint_at(&mut self, addr: VirtAddr) -> &BreakpointVA {
+    pub fn add_breakpoint_at(&mut self, addr: VirtAddr) -> Result<&BreakpointVA, String> {
+        if self.stop_points.contains_address(&addr) {
+            return Err(format!(
+                "Breakpoint already created at address: {}",
+                addr.addr()
+            ));
+        }
         let bp = BreakpointVA::create_for_process_at(self, addr);
-        self.breakpoints.push(bp);
-        self.breakpoints.last().unwrap()
+        Ok(self.stop_points.push(bp))
     }
 }

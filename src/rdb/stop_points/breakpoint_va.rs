@@ -1,5 +1,5 @@
-use crate::rdb::{process::Process, virtual_address::VirtAddr};
 use crate::rdb::stop_points::stoppoint_collection::Stoppoint;
+use crate::rdb::{process::Process, virtual_address::VirtAddr};
 
 pub struct BreakpointVA {
     id: usize,
@@ -21,9 +21,6 @@ impl BreakpointVA {
     pub fn enable(&mut self) {
         self.is_enabled_ = true;
     }
-    pub fn disable(&mut self) {
-        self.is_enabled_ = false;
-    }
     pub fn is_at(&self, addr: &VirtAddr) -> bool {
         self.virtual_address == *addr
     }
@@ -33,15 +30,16 @@ impl BreakpointVA {
 }
 
 impl Stoppoint for BreakpointVA {
-    fn id(&self) -> usize
-    {
+    fn id(&self) -> usize {
         self.id
     }
-    fn address(&self) -> &VirtAddr
-    {
+    fn address(&self) -> &VirtAddr {
         &self.virtual_address
     }
     fn is_enabled(&self) -> bool {
         self.is_enabled_
+    }
+    fn disable(&mut self) {
+        self.is_enabled_ = false;
     }
 }
