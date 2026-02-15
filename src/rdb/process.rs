@@ -228,34 +228,100 @@ impl Process {
         if "set".starts_with(subcommand) {
             let address: Option<u64> = str_to_int::<u64>(args[2], 16);
             if address.is_none() {
-                println!("Breakpoint command expects address in hexadecimal");
+                eprintln!("Breakpoint command expects address in hexadecimal");
                 return;
             }
             let virt_addr = VirtAddr::with_addr(address.unwrap());
             self.add_breakpoint_at(virt_addr);
             return;
         }
+        let id: Option<usize> = str_to_int::<usize>(args[2], 10);
+        if id.is_none() {
+            eprintln!("Command expects breakpoint id in base 10");
+            return;
+        }
+        let id = id.unwrap();
+        let bp = self.stop_points.get_by_id_mut(id);
+        if bp.is_none() {
+            eprintln!("Invalid id");
+            return;
+        }
+        let bp = bp.unwrap();
+        if "enable".starts_with(subcommand) {
+            let res = bp.enable(self.pid);
+            if let Err(e) = res {
+                eprintln!("{}", e);
+            }
+        }
+        if "disable".starts_with(subcommand) {
+            let res = bp.disable(self.pid);
+            if let Err(e) = res {
+                eprintln!("{}", e);
+            }
+        }
+        if "delete".starts_with(subcommand) {
+            self.stop_points.remove_by_id(id, self.pid);
+        }
     }
     fn handle_help(&self, args: Vec<&str>) {
         println!("=================================================================================================");
+
         if args.len() == 1 {
-            println!("Available Commands: ");
-            println!("  continue - Resume the Debuggee");
-            println!("  register - Commands for reading and writing to registers");
+            self.print_general_help();
         } else {
-            let command = args[1];
-            if "register".starts_with(command) {
-                println!("Available Sub-Commands: ");
-                println!("  read");
-                println!("  read <register>");
-                println!("  read all");
-                println!("  write <register> <value>");
-            } else {
-                println!("Unsupported command: {}", command);
+            self.print_command_help(args[1]);
+        }
+    }
+    fn print_general_help(&self) {
+        println!("Available Commands:");
+        println!("  continue  - Resume the debuggee");
+        println!("  register  - Read and write to registers");
+        println!("  breakpoint - Manage breakpoints");
+        println!("  help      - Show this help message");
+        println!();
+        println!("Use 'help <command>' for detailed information about a specific command");
+    }
+
+    fn print_command_help(&self, command: &str) {
+        match command {
+            c if "register".starts_with(c) => {
+                println!("Register Commands:");
+                println!("  register read                - Show all registers");
+                println!("  register read all            - Show all registers");
+                println!("  register read <register>     - Show specific register value");
+                println!("  register write <reg> <value> - Write value to register");
+                println!();
+                println!("Examples:");
+                println!("  register read rax");
+                println!("  register write rip 0x401000");
+            }
+            c if "breakpoint".starts_with(c) => {
+                println!("Breakpoint Commands:");
+                println!("  breakpoint list              - List all breakpoints");
+                println!("  breakpoint set <address>     - Set breakpoint at address (hex)");
+                println!("  breakpoint enable <id>       - Enable breakpoint by ID");
+                println!("  breakpoint disable <id>      - Disable breakpoint by ID");
+                println!("  breakpoint delete <id>       - Delete breakpoint by ID");
+                println!();
+                println!("Examples:");
+                println!("  breakpoint set 0x401000");
+                println!("  breakpoint enable 1");
+                println!("  breakpoint delete 2");
+            }
+            c if "continue".starts_with(c) => {
+                println!("Continue Command:");
+                println!("  continue - Resume execution of the debuggee");
+                println!();
+                println!("The process will run until it hits a breakpoint, receives a signal,");
+                println!("or terminates.");
+            }
+            _ => {
+                eprintln!("Unknown command: {}", command);
+                println!();
+                self.print_general_help();
             }
         }
     }
-
     unsafe fn handle_register(&mut self, args: Vec<&str>) {
         if args.len() < 2 {
             self.handle_help(args);

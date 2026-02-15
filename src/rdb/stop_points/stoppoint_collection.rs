@@ -1,3 +1,5 @@
+use nix::unistd::Pid;
+
 use crate::rdb::{process::Process, virtual_address::VirtAddr};
 
 // Trait that stoppoint types must implement
@@ -5,8 +7,8 @@ pub trait Stoppoint {
     fn id(&self) -> usize;
     fn address(&self) -> &VirtAddr;
     fn is_enabled(&self) -> bool;
-    fn disable(&mut self, process: &Process) -> Result<(), String>;
-    fn enable(&mut self, process: &Process) -> Result<(), String>;
+    fn disable(&mut self, pid: Pid) -> Result<(), String>;
+    fn enable(&mut self, pid: Pid) -> Result<(), String>;
 }
 
 pub struct StoppointCollection<S: Stoppoint> {
@@ -45,19 +47,19 @@ impl<S: Stoppoint> StoppointCollection<S> {
             .iter_mut()
             .find(|sp| sp.address() == virt_addr)
     }
-    pub fn remove_by_id(&mut self, id: usize, process: &Process) -> Option<S> {
+    pub fn remove_by_id(&mut self, id: usize, pid: Pid) -> Option<S> {
         if let Some(pos) = self.stoppoints.iter().position(|sp| sp.id() == id) {
             let mut bp = self.stoppoints.remove(pos);
-            bp.disable(process);
+            bp.disable(pid);
             Some(bp)
         } else {
             None
         }
     }
-    pub fn remove_by_address(&mut self, addr: &VirtAddr, process: &Process) -> Option<S> {
+    pub fn remove_by_address(&mut self, addr: &VirtAddr, pid: Pid) -> Option<S> {
         if let Some(pos) = self.stoppoints.iter().position(|sp| sp.address() == addr) {
             let mut bp = self.stoppoints.remove(pos);
-            bp.disable(process);
+            bp.disable(pid);
             Some(bp)
         } else {
             None

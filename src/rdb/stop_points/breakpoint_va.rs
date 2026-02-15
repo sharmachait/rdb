@@ -1,6 +1,7 @@
 use crate::rdb::stop_points::stoppoint_collection::Stoppoint;
 use crate::rdb::{process::Process, virtual_address::VirtAddr};
 use nix::sys::ptrace;
+use nix::unistd::Pid;
 
 pub struct BreakpointVA {
     id: usize,
@@ -37,24 +38,21 @@ impl Stoppoint for BreakpointVA {
     fn is_enabled(&self) -> bool {
         self.is_enabled_
     }
-    fn disable(&mut self, process: &Process) -> Result<(), String> {
+    fn disable(&mut self, pid: Pid) -> Result<(), String> {
         if !self.is_enabled_ {
             return Ok(());
         }
-        let data = ptrace::read(
-            process.pid(),
-            self.virtual_address.addr() as usize as *mut _,
-        )
-        .map_err(|e| {
-            format!(
-                "Couldnt read adta at {}, {}",
-                self.virtual_address.addr(),
-                e
-            )
-        })?;
+        let data =
+            ptrace::read(pid, self.virtual_address.addr() as usize as *mut _).map_err(|e| {
+                format!(
+                    "Couldnt read adta at {}, {}",
+                    self.virtual_address.addr(),
+                    e
+                )
+            })?;
         let restored_data = (data & !0xff) | (self.instruction_replaced as i64);
         ptrace::write(
-            process.pid(),
+            pid,
             self.virtual_address.addr() as usize as *mut _,
             restored_data,
         )
@@ -62,12 +60,12 @@ impl Stoppoint for BreakpointVA {
         self.is_enabled_ = false;
         Ok(())
     }
-    fn enable(&mut self, process: &Process) -> Result<(), String> {
+    fn enable(&mut self, pid: Pid) -> Result<(), String> {
         if self.is_enabled_ {
             return Ok(());
         }
         let data = ptrace::read(
-            process.pid(),
+            pid,
             self.virtual_address.addr() as usize as *mut _, // the underscore lets the compiler
                                                             // dynamically infer the type
         )
@@ -88,7 +86,7 @@ impl Stoppoint for BreakpointVA {
 
         // Write back the modified data with int3
         ptrace::write(
-            process.pid(),
+            pid,
             self.virtual_address.addr() as usize as *mut _,
             data_with_int3,
         )
