@@ -8,6 +8,12 @@ pub unsafe fn attach(args: Vec<String>) -> Result<Process, String> {
     } else {
         //spin up a new process and attach to it
         let program_path = args[1].clone();
-        Process::launch(&program_path, None)
+        let process = Process::launch(&program_path, None);
+        if let Err(r) = process {
+            return Err(r);
+        }
+        let process = process.unwrap();
+        println!("Launched process with PID {}", process.pid().as_raw());
+        Ok(process)
     }
 }

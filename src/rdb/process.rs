@@ -7,6 +7,7 @@ use crate::rdb::stop_points::stoppoint_collection::{Stoppoint, StoppointCollecti
 use crate::rdb::virtual_address::VirtAddr;
 use nix::errno::Errno;
 use nix::fcntl::{fcntl, FcntlArg, FdFlag};
+use nix::libc::{personality, ADDR_NO_RANDOMIZE};
 use nix::libc::{ptrace, PTRACE_PEEKUSER};
 use nix::sys::ptrace;
 use nix::sys::signal::{kill, Signal};
@@ -133,6 +134,16 @@ impl Process {
                 }
                 Ok(ForkResult::Child) => {
                     close(read_fd).ok(); // we only want to write from the child
+
+                    if personality(ADDR_NO_RANDOMIZE as libc::c_ulong) < 0 {
+                        let _ = write(
+                            &write_fd,
+                            "Failed to disable memory randomization".as_bytes(),
+                        );
+                        eprintln!("Failed to disable memory randomiazation");
+                        close(write_fd).ok();
+                        process::exit(1);
+                    }
 
                     if let Some(fd) = stdout_replacement {
                         if libc::dup2(fd, libc::STDOUT_FILENO) < 0 {
