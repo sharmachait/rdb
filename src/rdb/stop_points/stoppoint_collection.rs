@@ -1,11 +1,12 @@
-use crate::rdb::virtual_address::VirtAddr;
+use crate::rdb::{process::Process, virtual_address::VirtAddr};
 
 // Trait that stoppoint types must implement
 pub trait Stoppoint {
     fn id(&self) -> usize;
     fn address(&self) -> &VirtAddr;
     fn is_enabled(&self) -> bool;
-    fn disable(&mut self);
+    fn disable(&mut self, process: &Process) -> Result<(), String>;
+    fn enable(&mut self, process: &Process) -> Result<(), String>;
 }
 
 pub struct StoppointCollection<S: Stoppoint> {
@@ -44,19 +45,19 @@ impl<S: Stoppoint> StoppointCollection<S> {
             .iter_mut()
             .find(|sp| sp.address() == virt_addr)
     }
-    pub fn remove_by_id(&mut self, id: usize) -> Option<S> {
+    pub fn remove_by_id(&mut self, id: usize, process: &Process) -> Option<S> {
         if let Some(pos) = self.stoppoints.iter().position(|sp| sp.id() == id) {
             let mut bp = self.stoppoints.remove(pos);
-            bp.disable();
+            bp.disable(process);
             Some(bp)
         } else {
             None
         }
     }
-    pub fn remove_by_address(&mut self, addr: &VirtAddr) -> Option<S> {
+    pub fn remove_by_address(&mut self, addr: &VirtAddr, process: &Process) -> Option<S> {
         if let Some(pos) = self.stoppoints.iter().position(|sp| sp.address() == addr) {
             let mut bp = self.stoppoints.remove(pos);
-            bp.disable();
+            bp.disable(process);
             Some(bp)
         } else {
             None

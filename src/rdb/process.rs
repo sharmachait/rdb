@@ -186,9 +186,19 @@ impl Process {
             self.handle_help(args);
         } else if "register".starts_with(command) {
             self.handle_register(args);
+        } else if "breakpoint".starts_with(command) {
+            self.handle_breakpoint(args)
         } else {
             eprintln!("unknown command: {}", command)
         }
+    }
+    fn handle_breakpoint(&self, args: Vec<&str>) {
+        if args.len() < 2 {
+            self.handle_help(args);
+            return;
+        }
+
+        let command = args[1];
     }
     fn handle_help(&self, args: Vec<&str>) {
         println!("=================================================================================================");
