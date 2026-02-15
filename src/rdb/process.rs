@@ -1,9 +1,9 @@
 use crate::rdb::process_registers::{ProcRegisters, RegisterValue};
 use crate::rdb::register_info::{
-    Register, RegisterId, RegisterType, User, UserFpRegsStruct, UserRegsStruct,
+    str_to_int, Register, RegisterId, RegisterType, User, UserFpRegsStruct, UserRegsStruct,
 };
 use crate::rdb::stop_points::breakpoint_va::BreakpointVA;
-use crate::rdb::stop_points::stoppoint_collection::StoppointCollection;
+use crate::rdb::stop_points::stoppoint_collection::{Stoppoint, StoppointCollection};
 use crate::rdb::virtual_address::VirtAddr;
 use nix::errno::Errno;
 use nix::fcntl::{fcntl, FcntlArg, FdFlag};
@@ -192,13 +192,49 @@ impl Process {
             eprintln!("unknown command: {}", command)
         }
     }
-    fn handle_breakpoint(&self, args: Vec<&str>) {
+    fn handle_breakpoint(&mut self, args: Vec<&str>) {
         if args.len() < 2 {
             self.handle_help(args);
             return;
         }
 
-        let command = args[1];
+        let subcommand = args[1];
+        if "list".starts_with(subcommand) {
+            if self.stop_points.is_empty() {
+                println!("No breakpoints set");
+            } else {
+                println!("Current Breakpoints: ");
+                self.stop_points.for_each(|bp| {
+                    println!(
+                        "{}: address = {:#x}, {}",
+                        bp.id(),
+                        bp.address().addr(),
+                        if bp.is_enabled() {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        }
+                    );
+                });
+            }
+            return;
+        }
+
+        if args.len() < 3 {
+            self.handle_help(args);
+            return;
+        }
+
+        if "set".starts_with(subcommand) {
+            let address: Option<u64> = str_to_int::<u64>(args[2], 16);
+            if address.is_none() {
+                println!("Breakpoint command expects address in hexadecimal");
+                return;
+            }
+            let virt_addr = VirtAddr::with_addr(address.unwrap());
+            self.add_breakpoint_at(virt_addr);
+            return;
+        }
     }
     fn handle_help(&self, args: Vec<&str>) {
         println!("=================================================================================================");

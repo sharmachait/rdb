@@ -483,7 +483,7 @@ fn str_to_vector<const N: usize>(s: &str) -> Option<[u8; N]> {
     Some(bytes)
 }
 
-fn str_to_int<T>(s: &str, base: u32) -> Option<T>
+pub fn str_to_int<T>(s: &str, base: u32) -> Option<T>
 where
     T: num_traits::Num,
 {
