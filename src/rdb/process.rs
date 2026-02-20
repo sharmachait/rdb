@@ -425,6 +425,24 @@ impl Process {
     fn wait_on_signal(&mut self) -> Result<WaitStatus, Errno> {
         let wait_res = waitpid(self.pid, None);
         match wait_res {
+            Ok(status @ WaitStatus::Stopped(child_pid, signal)) => {
+                self.process_state = ProcessState::Stopped;
+                let res = self.read_all_registers();
+                if let Err(e) = res {
+                    eprintln!("{}", e);
+                }
+                Ok(status)
+            }
+            Ok(status @ WaitStatus::Exited(child_pid, code)) => {
+                eprintln!("Process exited with code {}", code);
+                self.process_state = ProcessState::Exited;
+                Ok(status)
+            }
+            Ok(status @ WaitStatus::Signaled(child_pid, sig, core_dumped)) => {
+                eprintln!("Process killed by signal {:?}", sig);
+                self.process_state = ProcessState::Terminated;
+                Ok(status)
+            }
             Ok(status) => {
                 self.process_state = ProcessState::Stopped;
                 let res = self.read_all_registers();
@@ -440,6 +458,7 @@ impl Process {
             }
         }
     }
+
     pub unsafe fn write_to_user_by_register_id(
         &mut self,
         id: RegisterId,
