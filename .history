@@ -23,3 +23,33 @@ register read st0
 ster write st0 0x3fff8000000000000000
 register write st0 0x3fff8000000000000000
 register read st0
+break set 0x55555555515b
+c
+break set 0x55555555515b
+break list
+break enable 1
+c
+continue
+break set 0x55555555515b
+break set 0x55555555516a
+break set 0x555555555179
+break list
+break enable 1
+break enable 2
+break list
+continue
+break list
+break disable 1
+break list
+continue
+c
+break set 0x55555555515b
+c
+break set 0x55555555515b
+break enable 1
+c
+break disable 2
+break disable 1
+c
+continue
+c

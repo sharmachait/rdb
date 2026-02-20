@@ -481,9 +481,10 @@ impl Process {
             )
         };
         if result < 0 {
-            return Err("Couldnt write to Floating point registers");
+            Err("Couldnt write to Floating point registers")
+        } else {
+            Ok("Register updated")
         }
-        return Ok("Register updated");
     }
 
     fn write_gprs(&self) -> Result<&str, &str> {
@@ -498,42 +499,56 @@ impl Process {
             )
         };
         if result < 0 {
-            return Err("Couldnt write to General purpose registers");
+            Err("Couldnt write to General purpose registers")
+        } else {
+            Ok("Register Updated")
         }
-        return Ok("Register Updated");
     }
     pub fn read_all_registers(&mut self) -> Result<&str, &str> {
+        match self.process_state {
+            ProcessState::Stopped => {} // OK to proceed
+            _ => return Err("Cannot read registers: process is not stopped"),
+        }
         use nix::libc::{ptrace as libc_ptrace, PTRACE_GETFPREGS};
-        let regs_libc = ptrace::getregs(self.pid).map_err(|_| "Couldnt read GPR registers")?;
-        self.proc_registers.data_.regs = UserRegsStruct {
-            r15: regs_libc.r15,
-            r14: regs_libc.r14,
-            r13: regs_libc.r13,
-            r12: regs_libc.r12,
-            rbp: regs_libc.rbp,
-            rbx: regs_libc.rbx,
-            r11: regs_libc.r11,
-            r10: regs_libc.r10,
-            r9: regs_libc.r9,
-            r8: regs_libc.r8,
-            rax: regs_libc.rax,
-            rcx: regs_libc.rcx,
-            rdx: regs_libc.rdx,
-            rsi: regs_libc.rsi,
-            rdi: regs_libc.rdi,
-            orig_rax: regs_libc.orig_rax,
-            rip: regs_libc.rip,
-            cs: regs_libc.cs,
-            eflags: regs_libc.eflags,
-            rsp: regs_libc.rsp,
-            ss: regs_libc.ss,
-            fs_base: regs_libc.fs_base,
-            gs_base: regs_libc.gs_base,
-            ds: regs_libc.ds,
-            es: regs_libc.es,
-            fs: regs_libc.fs,
-            gs: regs_libc.gs,
-        };
+
+        let regs_libc = ptrace::getregs(self.pid);
+        if let Err(ref e) = regs_libc {
+            eprintln!("getregs errno: {}", e); // tells you ESRCH vs EPERM etc.
+        }
+        //.map_err(|_| "Couldnt read GPR registers")?;
+        if let Ok(regs_libc) = regs_libc {
+            self.proc_registers.data_.regs = UserRegsStruct {
+                r15: regs_libc.r15,
+                r14: regs_libc.r14,
+                r13: regs_libc.r13,
+                r12: regs_libc.r12,
+                rbp: regs_libc.rbp,
+                rbx: regs_libc.rbx,
+                r11: regs_libc.r11,
+                r10: regs_libc.r10,
+                r9: regs_libc.r9,
+                r8: regs_libc.r8,
+                rax: regs_libc.rax,
+                rcx: regs_libc.rcx,
+                rdx: regs_libc.rdx,
+                rsi: regs_libc.rsi,
+                rdi: regs_libc.rdi,
+                orig_rax: regs_libc.orig_rax,
+                rip: regs_libc.rip,
+                cs: regs_libc.cs,
+                eflags: regs_libc.eflags,
+                rsp: regs_libc.rsp,
+                ss: regs_libc.ss,
+                fs_base: regs_libc.fs_base,
+                gs_base: regs_libc.gs_base,
+                ds: regs_libc.ds,
+                es: regs_libc.es,
+                fs: regs_libc.fs,
+                gs: regs_libc.gs,
+            };
+        } else {
+            return Err("Couldnt Read GPR REGS!");
+        }
 
         let mut fpregs: UserFpRegsStruct = unsafe { std::mem::zeroed() };
         let result = unsafe {
