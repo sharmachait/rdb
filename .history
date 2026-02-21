@@ -53,3 +53,39 @@ break disable 1
 c
 continue
 c
+break set 0x55555555515b
+c
+break set 0x55555555515b
+break list
+break enable 1
+c
+break disable 1
+breka list
+break list
+c
+cc
+c
+break set 0x55555555515b
+break enable 1
+c
+break set 0x55555555515b
+break list
+break enable 1
+break list
+c
+break disable 1
+break list
+c
+break set 0x55555555515b
+c
+break set 0x55555555515b
+break enable 1
+c
+break set 0x55555555515b
+break enable 1
+c
+break disable 1
+break set 0x55555555515b
+break list
+break enable 1
+c

@@ -11,11 +11,11 @@ impl ProcRegisters {
     pub fn new(user: User) -> Self {
         Self { data_: user }
     }
-    pub unsafe fn get_register_val_by_id(&mut self, id: RegisterId) -> Result<RegisterValue, &str> {
+    pub unsafe fn get_register_val_by_id(&self, id: RegisterId) -> Result<RegisterValue, &str> {
         let register = Register::by_id(id);
         self.get_register_val(register)
     }
-    unsafe fn get_register_val(&mut self, register: &Register) -> Result<RegisterValue, &str> {
+    unsafe fn get_register_val(&self, register: &Register) -> Result<RegisterValue, &str> {
         let bytes = RegisterValue::as_bytes_const(&self.data_);
         let offset = register.offset;
         if register.register_format == RegisterFormat::Uint {

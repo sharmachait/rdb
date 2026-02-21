@@ -416,13 +416,51 @@ impl Process {
     }
 
     fn resume(&mut self) {
+        let pid = self.pid();
+        let rip_va = unsafe { self.get_instruction_pointer_va() };
+        match rip_va {
+            Ok(va) => {
+                // if we happen to resume at a breakpoint we will restore it step over it re enable
+                // it and then continue as we were doing before
+                if self.stop_points.is_stoppoint_enabled_by_address(&va) {
+                    let bp = self.stop_points.get_by_address_mut(&va).unwrap();
+                    let disable_res = bp.disable(pid);
+                    if let Err(e) = disable_res {
+                        eprintln!("Disabling breakpoint failed while stepping over: {}", e);
+                        process::exit(1);
+                    }
+                    // single step over the instruction we just restored
+                    if let Err(e) = ptrace::step(pid, None) {
+                        eprintln!("Failed to single step: {}", e);
+                        process::exit(1);
+                    }
+
+                    // wait for the single step to complete
+                    if let Err(e) = waitpid(pid, None) {
+                        eprintln!("waitpid failed: {}", e);
+                        process::exit(1);
+                    }
+
+                    // re-enable the breakpoint
+                    let bp = self.stop_points.get_by_address_mut(&va).unwrap();
+                    if let Err(e) = bp.enable(pid) {
+                        eprintln!("Re-enabling breakpoint failed: {}", e);
+                        process::exit(1);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                process::exit(1);
+            }
+        }
         if let Err(e) = ptrace::cont(self.pid(), None) {
             eprintln!("Couldn't Continue: {}", e);
             process::exit(1);
         }
         self.process_state = ProcessState::Running;
     }
-    fn wait_on_signal(&mut self) -> Result<WaitStatus, Errno> {
+    fn wait_on_signal(&mut self) -> Result<WaitStatus, &str> {
         let wait_res = waitpid(self.pid, None);
         match wait_res {
             Ok(status @ WaitStatus::Stopped(child_pid, signal)) => {
@@ -431,6 +469,20 @@ impl Process {
                 if let Err(e) = res {
                     eprintln!("{}", e);
                 }
+                let rip: VirtAddr = unsafe { self.get_instruction_pointer_va().map_err(|e| e)? };
+                let rip_val = rip.addr() - 1;
+                let intruction_beginning = rip_val - 1;
+                let instruction_bgeinning_addr = VirtAddr::with_addr(intruction_beginning);
+                if signal == Signal::SIGTRAP
+                    && self
+                        .stop_points
+                        .is_stoppoint_enabled_by_address(&instruction_bgeinning_addr)
+                {
+                    unsafe {
+                        self.set_instruction_pointer_va(instruction_bgeinning_addr);
+                    }
+                }
+
                 Ok(status)
             }
             Ok(status @ WaitStatus::Exited(child_pid, code)) => {
@@ -454,7 +506,7 @@ impl Process {
             Err(e) => {
                 eprintln!("waitpid failed: {}", e);
                 self.process_state = ProcessState::Terminated;
-                Err(e)
+                Err("waitpid failed")
             }
         }
     }
@@ -612,7 +664,7 @@ impl Process {
         Ok("Read all registers")
     }
 
-    pub unsafe fn get_instruction_pointer_va(&mut self) -> Result<VirtAddr, &str> {
+    pub unsafe fn get_instruction_pointer_va(&self) -> Result<VirtAddr, &'static str> {
         let rip_val = self
             .proc_registers
             .get_register_val_by_id(RegisterId::Rip)
@@ -632,5 +684,9 @@ impl Process {
         }
         let bp = BreakpointVA::create_for_process_at(self, addr);
         Ok(self.stop_points.push(bp))
+    }
+    unsafe fn set_instruction_pointer_va(&mut self, virt_addr: VirtAddr) {
+        let register_value: RegisterValue = RegisterValue::U64(virt_addr.addr());
+        self.write_to_user_by_register_id(RegisterId::Rip, register_value);
     }
 }
