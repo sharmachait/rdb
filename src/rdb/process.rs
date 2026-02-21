@@ -237,13 +237,19 @@ impl Process {
         }
 
         if "set".starts_with(subcommand) {
+            let pid = self.pid();
             let address: Option<u64> = str_to_int::<u64>(args[2], 16);
             if address.is_none() {
                 eprintln!("Breakpoint command expects address in hexadecimal");
                 return;
             }
             let virt_addr = VirtAddr::with_addr(address.unwrap());
-            self.add_breakpoint_at(virt_addr);
+            let bp_res = self.add_breakpoint_at(virt_addr);
+            if let Ok(bp) = bp_res {
+                bp.enable(pid);
+            } else {
+                eprintln!("Not able to set BP");
+            }
             return;
         }
         let id: Option<usize> = str_to_int::<usize>(args[2], 10);
@@ -676,7 +682,7 @@ impl Process {
             _ => Err("Invalid Register value returned"),
         }
     }
-    pub fn add_breakpoint_at(&mut self, addr: VirtAddr) -> Result<&BreakpointVA, String> {
+    pub fn add_breakpoint_at(&mut self, addr: VirtAddr) -> Result<&mut BreakpointVA, String> {
         if self.stop_points.contains_address(&addr) {
             return Err(format!(
                 "Breakpoint already created at address: {}",
