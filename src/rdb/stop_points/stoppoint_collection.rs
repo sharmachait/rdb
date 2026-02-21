@@ -27,6 +27,11 @@ impl<S: Stoppoint> StoppointCollection<S> {
         self.stoppoints.iter().any(|sp| sp.address() == addr)
     }
     pub fn is_stoppoint_enabled_by_address(&self, addr: &VirtAddr) -> bool {
+        println!("Looking for address: {}", addr.addr());
+        println!("Current stoppoints:");
+        for sp in self.stoppoints.iter() {
+            println!("  {}", sp.address().addr());
+        }
         self.stoppoints
             .iter()
             .find(|sp| sp.address() == addr)

@@ -422,6 +422,7 @@ impl Process {
             Ok(va) => {
                 // if we happen to resume at a breakpoint we will restore it step over it re enable
                 // it and then continue as we were doing before
+                let pre_rip_va = VirtAddr::with_addr(va.addr() - 1);
                 if self.stop_points.is_stoppoint_enabled_by_address(&va) {
                     let bp = self.stop_points.get_by_address_mut(&va).unwrap();
                     let disable_res = bp.disable(pid);

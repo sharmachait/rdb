@@ -1,24 +1,4 @@
 #V2
-continue
-hello
-c
-continue
-c
-continue
-c
-continue
-c
-cont
-continue
-register write rsi 0xcafecafe
-register read rsi
-register write mm0 [0xba,0x5e,0xba,0x11]
-register read mm0
-register write xmm0 [0xba,0x5e,0xba,0x11]
-register read xmm0
-register write fsw 0xfff
-register read fsw
-register write st0 3.14159265358979323846264338327950288419716939937510
 register read st0
 ster write st0 0x3fff8000000000000000
 register write st0 0x3fff8000000000000000
@@ -87,5 +67,35 @@ c
 break disable 1
 break set 0x55555555515b
 break list
+break enable 1
+c
+break set 0x55555555515b
+break list
+break enabled
+break enabled 1
+break list
+break enable 1
+break list
+continue
+register read rrip
+register read rip
+c
+break set 0x55555555515b
+break list
+break enable 1
+break list
+register read rip
+c
+break set 0x55555555515b
+break enable 1
+break list
+c
+register read rip
+c
+break set 0x55555555515b
+break list
+break enable 1
+c
+break set 0x55555555515b
 break enable 1
 c
