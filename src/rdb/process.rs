@@ -502,6 +502,14 @@ impl Process {
                 self.process_state = ProcessState::Terminated;
                 Ok(status)
             }
+            Ok(status @ WaitStatus::Continued(_child_pid)) => {
+                self.process_state = ProcessState::Running;
+                Ok(status)
+            }
+            Ok(status @ WaitStatus::StillAlive) => {
+                self.process_state = ProcessState::Running;
+                Ok(status)
+            }
             Ok(status) => {
                 self.process_state = ProcessState::Stopped;
                 let res = self.read_all_registers();
