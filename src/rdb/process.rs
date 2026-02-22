@@ -478,7 +478,7 @@ impl Process {
                 }
                 let rip: VirtAddr = unsafe { self.get_instruction_pointer_va().map_err(|e| e)? };
                 let rip_val = rip.addr() - 1;
-                let intruction_beginning = rip_val - 1;
+                let intruction_beginning = rip_val;
                 let instruction_bgeinning_addr = VirtAddr::with_addr(intruction_beginning);
                 if signal == Signal::SIGTRAP
                     && self
