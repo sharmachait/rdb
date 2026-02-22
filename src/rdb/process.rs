@@ -199,6 +199,9 @@ impl Process {
             self.handle_register(args);
         } else if "breakpoint".starts_with(command) {
             self.handle_breakpoint(args)
+        } else if "step".starts_with(command) {
+            println!("Stepping Over one instruction");
+            self.step_one_instruction(args);
         } else {
             eprintln!("unknown command: {}", command)
         }
@@ -703,5 +706,37 @@ impl Process {
     unsafe fn set_instruction_pointer_va(&mut self, virt_addr: VirtAddr) {
         let register_value: RegisterValue = RegisterValue::U64(virt_addr.addr());
         self.write_to_user_by_register_id(RegisterId::Rip, register_value);
+    }
+    unsafe fn step_one_instruction(&mut self, args: Vec<&str>) {
+        let rip = self.get_instruction_pointer_va();
+        if let Err(e) = rip {
+            eprintln!("Couldnt get RIP register");
+            return;
+        }
+        let pid = self.pid();
+        let mut flag_reenable = false;
+        let rip = rip.unwrap();
+        if self.stop_points.is_stoppoint_enabled_by_address(&rip) {
+            let bp = self.stop_points.get_by_address_mut(&rip).unwrap();
+            bp.disable(pid);
+            flag_reenable = true;
+        }
+        // single step over the instruction we just restored
+        if let Err(e) = ptrace::step(pid, None) {
+            eprintln!("Failed to single step: {}", e);
+            process::exit(1);
+        }
+
+        let wait_status = self.wait_on_signal();
+
+        if let Err(e) = wait_status {
+            eprintln!("waiting after stepping over single failed");
+        }
+
+        let pid = self.pid();
+        if flag_reenable {
+            let bp = self.stop_points.get_by_address_mut(&rip).unwrap();
+            bp.enable(pid);
+        }
     }
 }
