@@ -2,6 +2,8 @@ use crate::rdb::process_registers::{ProcRegisters, RegisterValue};
 use crate::rdb::register_info::{
     Register, RegisterId, RegisterType, User, UserFpRegsStruct, UserRegsStruct,
 };
+use crate::rdb::stop_points::breakpoint::BreakpointVA;
+use crate::rdb::stop_points::stoppoint_collection::StoppointCollection;
 use crate::rdb::virtual_address::VirtAddr;
 use nix::errno::Errno;
 use nix::fcntl::{fcntl, FcntlArg, FdFlag};
@@ -15,8 +17,10 @@ use std::os::fd::RawFd;
 use std::process;
 
 pub struct Process {
+    pub breakpoint_id: usize,
     pid: Pid,
     terminate_on_end: bool,
+    pub stop_points: StoppointCollection<BreakpointVA>,
     pub process_state: ProcessState,
     pub proc_registers: ProcRegisters,
 }
@@ -57,10 +61,12 @@ impl Process {
     pub fn new(pid: Pid, terminate_on_end: bool, process_state: ProcessState, data: User) -> Self {
         let proc_registers = ProcRegisters::new(data);
         Self {
+            breakpoint_id: 0,
             pid,
             terminate_on_end,
             process_state,
             proc_registers,
+            stop_points: StoppointCollection::default(),
         }
     }
     pub fn pid(&self) -> Pid {
