@@ -76,12 +76,12 @@ impl<S: Stoppoint> StoppointCollection<S> {
     }
     pub fn for_each(&self, f: impl Fn(&S)) {
         for sp in &self.stoppoints {
-            f(sp)
+            f(sp);
         }
     }
     pub fn for_each_mut(&mut self, mut f: impl FnMut(&mut S)) {
         for sp in &mut self.stoppoints {
-            f(sp)
+            f(sp);
         }
     }
 }
